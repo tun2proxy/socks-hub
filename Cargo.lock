@@ -1,0 +1,4 @@
+[root]
+name = "http2socks"
+version = "0.1.0"
+

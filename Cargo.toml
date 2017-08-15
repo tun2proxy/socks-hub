@@ -1,6 +1,15 @@
 [package]
-name = "phs"
+name = "http2socks"
 version = "0.1.0"
+license = "MIT"
+repository = "https://github.com/cssivision/http2socks"
+homepage = "https://github.com/cssivision/http2socks"
 authors = ["cssivision <cssivision@gmail.com>"]
+description = "http to socks proxy."
+readme = "README.md"
+
+[[bin]]
+name = "http2socks"
+path = "src/bin/main.rs"
 
 [dependencies]
