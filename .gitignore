@@ -6,3 +6,4 @@
 **/*.rs.bk
 /target/
 **/*.rs.bk
+.vscode/**
