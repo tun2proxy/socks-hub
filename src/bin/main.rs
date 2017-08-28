@@ -1,23 +1,31 @@
 extern crate futures;
-use futures::future::*;
+extern crate tokio_core;
+extern crate tokio_io;
+
+use futures::stream::Stream;
+use tokio_core::reactor::Core;
+use tokio_core::net::TcpListener;
+
+use futures::future::Future;
 
 fn main() {
-    let f = join_all(vec![
-        ok::<u32, u32>(1),
-        ok::<u32, u32>(2),
-        ok::<u32, u32>(3),
-    ]);
-    let f = f.map(|x| {
-        assert_eq!(x, [1, 2, 3]);
+    let mut core = Core::new().unwrap();
+    let handle = core.handle();
+    let address = "0.0.0.0:12345".parse().unwrap();
+    let listener = TcpListener::bind(&address, &handle).unwrap();
+
+    let server = listener.incoming().for_each(|(_socket, _welcome)| {
+        let s = tokio_io::io::write_all(_socket, b"hello world!")
+            .map(|_| {
+                println!("success!");
+            })
+            .map_err(|_| {
+                println!("err!");
+            });
+
+        handle.spawn(s);
+        Ok(())
     });
 
-    let f = join_all(vec![
-        ok::<u32, u32>(1).boxed(),
-        err::<u32, u32>(2).boxed(),
-        ok::<u32, u32>(3).boxed(),
-    ]);
-    let f = f.then(|x| {
-        assert_eq!(x, Err(2));
-        x
-    });
+    core.run(server).unwrap();
 }
