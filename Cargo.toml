@@ -7,15 +7,9 @@ homepage = "https://github.com/cssivision/http2socks"
 authors = ["cssivision <cssivision@gmail.com>"]
 description = "http to socks proxy."
 readme = "README.md"
-
-[[bin]]
-name = "http2socks"
-path = "src/bin/main.rs"
+edition = "2018"
 
 [dependencies]
-futures = "0.1.14"
-tokio-core = "0.1.9"
-tokio-io = "0.1.3"
-num = "0.1.40"
-futures-cpupool = "0.1.5"
-tokio-timer = "0.1.2"
+tokio = { version = "1", features = ["full"] }
+hyper = { version = "0.14", features = ["full"] }
+http = "0.2"
