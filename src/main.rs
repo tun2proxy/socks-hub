@@ -15,9 +15,17 @@ use tokio::io::{copy_bidirectional, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+
 #[derive(Clone)]
 struct SocksConnector {
     address: SocketAddr,
+}
+
+impl SocksConnector {
+    fn new(address: SocketAddr) -> SocksConnector {
+        SocksConnector { address }
+    }
 }
 
 type SocksClient = Client<SocksConnector>;
@@ -38,9 +46,8 @@ impl Service<Uri> for SocksConnector {
         let address = self.address;
         let fut = async move {
             log::debug!("connect to address {:?}", address);
-            let mut stream = TcpStream::connect(address).await?;
-            log::debug!("start handshake...");
-            handshake(&mut stream, Duration::from_secs(3), host, port).await?;
+            let mut stream = timeout(CONNECT_TIMEOUT, TcpStream::connect(address)).await??;
+            handshake(&mut stream, CONNECT_TIMEOUT, host, port).await?;
             Ok(stream)
         };
         Box::pin(fut)
@@ -116,19 +123,18 @@ async fn handshake_inner(conn: &mut TcpStream, host: String, port: u16) -> io::R
 // 3. send requests
 //    $ curl -i https://www.google.com/
 #[tokio::main]
-async fn main() {
+async fn main() -> io::Result<()> {
     env_logger::init();
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8100));
-    let socks_addr = "127.0.0.1:8080".parse().unwrap();
+    let bind_addr = SocketAddr::from(([127, 0, 0, 1], 8100));
+    let socks_addr = "127.0.0.1:8080"
+        .parse()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid socks address"))?;
 
-    let connector = SocksConnector {
-        address: socks_addr,
-    };
     let client = Client::builder()
         .http1_title_case_headers(true)
         .http1_preserve_header_case(true)
-        .build::<_, hyper::Body>(connector);
+        .build::<_, hyper::Body>(SocksConnector::new(socks_addr));
 
     let make_service = make_service_fn(move |_| {
         let client = client.clone();
@@ -141,16 +147,15 @@ async fn main() {
         }
     });
 
-    let server = Server::bind(&addr)
+    let server = Server::bind(&bind_addr)
         .http1_preserve_header_case(true)
         .http1_title_case_headers(true)
         .serve(make_service);
 
-    println!("Listening on http://{}", addr);
+    println!("Listening on http://{}", bind_addr);
 
-    if let Err(e) = server.await {
-        log::error!("server error: {}", e);
-    }
+    server.await.map_err(|e| other(&e.to_string()))?;
+    Ok(())
 }
 
 async fn proxy(
@@ -212,20 +217,11 @@ async fn tunnel(
     host: String,
     port: u16,
     socks_addr: SocketAddr,
-) -> std::io::Result<()> {
-    // Connect to remote server
-    let mut server = TcpStream::connect(socks_addr).await?;
-    handshake(&mut server, Duration::from_secs(3), host, port).await?;
-
-    // Proxying data
-    let (from_client, from_server) = copy_bidirectional(&mut upgraded, &mut server).await?;
-
-    // Print message when done
-    log::debug!(
-        "client wrote {} bytes and received {} bytes",
-        from_client,
-        from_server
-    );
+) -> io::Result<()> {
+    let mut server = timeout(CONNECT_TIMEOUT, TcpStream::connect(socks_addr)).await??;
+    handshake(&mut server, CONNECT_TIMEOUT, host, port).await?;
+    let (n1, n2) = copy_bidirectional(&mut upgraded, &mut server).await?;
+    log::debug!("client wrote {} bytes and received {} bytes", n1, n2);
 
     Ok(())
 }
