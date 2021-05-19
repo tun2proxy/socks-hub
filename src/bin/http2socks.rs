@@ -15,6 +15,8 @@ use tokio::io::{copy_bidirectional, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
+use http2socks::args::parse_args;
+
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone)]
@@ -125,34 +127,40 @@ async fn handshake_inner(conn: &mut TcpStream, host: String, port: u16) -> io::R
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
+    let config = parse_args("http2socks").unwrap();
+    log::info!("config: {}", serde_json::to_string_pretty(&config).unwrap());
 
-    let bind_addr = SocketAddr::from(([127, 0, 0, 1], 8100));
-    let socks_addr = "127.0.0.1:8080"
+    let local_addr = config
+        .server_addr
         .parse()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid socks address"))?;
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid local address"))?;
+    let server_addr = config
+        .server_addr
+        .parse()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid server address"))?;
 
     let client = Client::builder()
         .http1_title_case_headers(true)
         .http1_preserve_header_case(true)
-        .build::<_, hyper::Body>(SocksConnector::new(socks_addr));
+        .build::<_, hyper::Body>(SocksConnector::new(server_addr));
 
     let make_service = make_service_fn(move |_| {
         let client = client.clone();
         async move {
             Ok::<_, hyper::Error>(service_fn(move |req| {
                 let client = client.clone();
-                let fut = async move { proxy(client, req, socks_addr).await };
+                let fut = async move { proxy(client, req, server_addr).await };
                 fut
             }))
         }
     });
 
-    let server = Server::bind(&bind_addr)
+    let server = Server::bind(&local_addr)
         .http1_preserve_header_case(true)
         .http1_title_case_headers(true)
         .serve(make_service);
 
-    println!("Listening on http://{}", bind_addr);
+    println!("Listening on http://{}", local_addr);
 
     server.await.map_err(|e| other(&e.to_string()))?;
     Ok(())
@@ -161,7 +169,7 @@ async fn main() -> io::Result<()> {
 async fn proxy(
     client: SocksClient,
     req: Request<Body>,
-    socks_addr: SocketAddr,
+    server_addr: SocketAddr,
 ) -> Result<Response<Body>, hyper::Error> {
     log::debug!("req: {:?}", req);
 
@@ -185,7 +193,7 @@ async fn proxy(
             tokio::task::spawn(async move {
                 match hyper::upgrade::on(req).await {
                     Ok(upgraded) => {
-                        if let Err(e) = tunnel(upgraded, host, port, socks_addr).await {
+                        if let Err(e) = tunnel(upgraded, host, port, server_addr).await {
                             log::error!("tunnel io error: {}", e);
                         };
                     }
@@ -216,9 +224,9 @@ async fn tunnel(
     mut upgraded: Upgraded,
     host: String,
     port: u16,
-    socks_addr: SocketAddr,
+    server_addr: SocketAddr,
 ) -> io::Result<()> {
-    let mut server = timeout(CONNECT_TIMEOUT, TcpStream::connect(socks_addr)).await??;
+    let mut server = timeout(CONNECT_TIMEOUT, TcpStream::connect(server_addr)).await??;
     handshake(&mut server, CONNECT_TIMEOUT, host, port).await?;
     let (n1, n2) = copy_bidirectional(&mut upgraded, &mut server).await?;
     log::debug!("client wrote {} bytes and received {} bytes", n1, n2);
