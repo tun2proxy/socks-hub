@@ -115,9 +115,10 @@ async fn main() {
     env_logger::init();
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8100));
+    let socks_addr = "127.0.0.1:8080".parse().unwrap();
 
     let connector = SocksConnector {
-        address: "127.0.0.1:8080".parse().unwrap(),
+        address: socks_addr,
     };
     let client = Client::builder()
         .http1_title_case_headers(true)
@@ -126,7 +127,18 @@ async fn main() {
 
     let make_service = make_service_fn(move |_| {
         let client = client.clone();
-        async move { Ok::<_, hyper::Error>(service_fn(move |req| proxy(client.clone(), req))) }
+        async move {
+            Ok::<_, hyper::Error>(service_fn(move |req| {
+                let client = client.clone();
+                let fut = async move {
+                    proxy(client, req, socks_addr).await.map_err(|e| {
+                        log::error!("proxy error {:?}", e);
+                        e
+                    })
+                };
+                fut
+            }))
+        }
     });
 
     let server = Server::bind(&addr)
@@ -137,12 +149,16 @@ async fn main() {
     println!("Listening on http://{}", addr);
 
     if let Err(e) = server.await {
-        eprintln!("server error: {}", e);
+        log::error!("server error: {}", e);
     }
 }
 
-async fn proxy(client: SocksClient, req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
-    println!("req: {:?}", req);
+async fn proxy(
+    client: SocksClient,
+    req: Request<Body>,
+    socks_addr: SocketAddr,
+) -> Result<Response<Body>, hyper::Error> {
+    log::debug!("req: {:?}", req);
 
     if Method::CONNECT == req.method() {
         // Received an HTTP request like:
@@ -158,21 +174,23 @@ async fn proxy(client: SocksClient, req: Request<Body>) -> Result<Response<Body>
         // Note: only after client received an empty body with STATUS_OK can the
         // connection be upgraded, so we can't return a response inside
         // `on_upgrade` future.
-        if let Some(addr) = host_addr(req.uri()) {
+        if req.uri().authority().is_some() {
+            let host = req.uri().host().map(|v| v.to_string()).unwrap_or_default();
+            let port = req.uri().port_u16().unwrap_or_else(|| 80);
             tokio::task::spawn(async move {
                 match hyper::upgrade::on(req).await {
                     Ok(upgraded) => {
-                        if let Err(e) = tunnel(upgraded, addr).await {
-                            eprintln!("server io error: {}", e);
+                        if let Err(e) = tunnel(upgraded, host, port, socks_addr).await {
+                            log::error!("server io error: {}", e);
                         };
                     }
-                    Err(e) => eprintln!("upgrade error: {}", e),
+                    Err(e) => log::error!("upgrade error: {}", e),
                 }
             });
 
             Ok(Response::new(Body::empty()))
         } else {
-            eprintln!("CONNECT host is not socket addr: {:?}", req.uri());
+            log::error!("CONNECT host is not socket addr: {:?}", req.uri());
             let mut resp = Response::new(Body::from("CONNECT must be to a socket address"));
             *resp.status_mut() = http::StatusCode::BAD_REQUEST;
 
@@ -183,23 +201,26 @@ async fn proxy(client: SocksClient, req: Request<Body>) -> Result<Response<Body>
     }
 }
 
-fn host_addr(uri: &http::Uri) -> Option<String> {
-    uri.authority().and_then(|auth| Some(auth.to_string()))
-}
-
 // Create a TCP connection to host:port, build a tunnel between the connection and
 // the upgraded connection
-async fn tunnel(mut upgraded: Upgraded, addr: String) -> std::io::Result<()> {
+async fn tunnel(
+    mut upgraded: Upgraded,
+    host: String,
+    port: u16,
+    socks_addr: SocketAddr,
+) -> std::io::Result<()> {
     // Connect to remote server
-    let mut server = TcpStream::connect(addr).await?;
+    let mut server = TcpStream::connect(socks_addr).await?;
+    handshake(&mut server, Duration::from_secs(3), host, port).await?;
 
     // Proxying data
     let (from_client, from_server) = copy_bidirectional(&mut upgraded, &mut server).await?;
 
     // Print message when done
-    println!(
+    log::debug!(
         "client wrote {} bytes and received {} bytes",
-        from_client, from_server
+        from_client,
+        from_server
     );
 
     Ok(())
