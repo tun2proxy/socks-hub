@@ -6,13 +6,11 @@ use std::str::FromStr;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use hyper::{
-    client::Client,
-    server::Server,
-    service::{make_service_fn, service_fn, Service},
-    upgrade::Upgraded,
-    Body, Method, Request, Response, Uri,
-};
+use hyper::client::Client;
+use hyper::server::Server;
+use hyper::service::{make_service_fn, service_fn, Service};
+use hyper::upgrade::Upgraded;
+use hyper::{Body, Method, Request, Response, Uri};
 use tokio::io::{copy_bidirectional, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -21,6 +19,8 @@ use tokio::time::timeout;
 struct SocksConnector {
     address: SocketAddr,
 }
+
+type SocksClient = Client<SocksConnector>;
 
 impl Service<Uri> for SocksConnector {
     type Response = TcpStream;
@@ -37,7 +37,9 @@ impl Service<Uri> for SocksConnector {
         log::debug!("proxy address {}:{}", host, port);
         let address = self.address;
         let fut = async move {
+            log::debug!("connect to address {:?}", address);
             let mut stream = TcpStream::connect(address).await?;
+            log::debug!("start handshake...");
             handshake(&mut stream, Duration::from_secs(3), host, port).await?;
             Ok(stream)
         };
@@ -64,11 +66,13 @@ async fn handshake(conn: &mut TcpStream, dur: Duration, host: String, port: u16)
 }
 
 async fn handshake_inner(conn: &mut TcpStream, host: String, port: u16) -> io::Result<()> {
+    log::trace!("write socks5 version and auth method");
     let n_meth_auth: u8 = 1;
     conn.write_all(&[v5::VERSION, n_meth_auth, v5::METH_NO_AUTH])
         .await?;
     let buf1 = &mut [0u8; 2];
 
+    log::trace!("read server socks version and mthod");
     conn.read_exact(buf1).await?;
     if buf1[0] != v5::VERSION {
         return Err(other("unknown version"));
@@ -77,8 +81,10 @@ async fn handshake_inner(conn: &mut TcpStream, host: String, port: u16) -> io::R
         return Err(other("unknow auth method"));
     }
 
+    log::trace!("write socks5 version and command");
     conn.write_all(&[v5::VERSION, v5::CMD_CONNECT, 0u8]).await?;
 
+    log::trace!("write address type and address");
     // write address
     let (address_type, mut address_bytes) = if let Ok(addr) = IpAddr::from_str(&host) {
         match addr {
@@ -95,13 +101,12 @@ async fn handshake_inner(conn: &mut TcpStream, host: String, port: u16) -> io::R
     address_bytes.extend_from_slice(&port.to_be_bytes());
     conn.write_all(&address_bytes).await?;
 
+    log::trace!("read server response");
     let mut resp = vec![0u8; 4 + address_bytes.len()];
     conn.read_exact(&mut resp).await?;
 
     Ok(())
 }
-
-type SocksClient = Client<SocksConnector>;
 
 // To try this example:
 // 1. cargo run --example http_proxy
@@ -109,7 +114,7 @@ type SocksClient = Client<SocksConnector>;
 //    $ export http_proxy=http://127.0.0.1:8100
 //    $ export https_proxy=http://127.0.0.1:8100
 // 3. send requests
-//    $ curl -i https://www.some_domain.com/
+//    $ curl -i https://www.google.com/
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -130,12 +135,7 @@ async fn main() {
         async move {
             Ok::<_, hyper::Error>(service_fn(move |req| {
                 let client = client.clone();
-                let fut = async move {
-                    proxy(client, req, socks_addr).await.map_err(|e| {
-                        log::error!("proxy error {:?}", e);
-                        e
-                    })
-                };
+                let fut = async move { proxy(client, req, socks_addr).await };
                 fut
             }))
         }
@@ -181,23 +181,27 @@ async fn proxy(
                 match hyper::upgrade::on(req).await {
                     Ok(upgraded) => {
                         if let Err(e) = tunnel(upgraded, host, port, socks_addr).await {
-                            log::error!("server io error: {}", e);
+                            log::error!("tunnel io error: {}", e);
                         };
                     }
                     Err(e) => log::error!("upgrade error: {}", e),
                 }
             });
-
             Ok(Response::new(Body::empty()))
         } else {
             log::error!("CONNECT host is not socket addr: {:?}", req.uri());
             let mut resp = Response::new(Body::from("CONNECT must be to a socket address"));
             *resp.status_mut() = http::StatusCode::BAD_REQUEST;
-
             Ok(resp)
         }
     } else {
-        client.request(req).await
+        client.request(req).await.or_else(|e| {
+            log::error!("client request error {:?}", e);
+            let mut resp =
+                Response::new(Body::from(format!("proxy server interval error {:?}", e)));
+            *resp.status_mut() = http::StatusCode::BAD_REQUEST;
+            Ok(resp)
+        })
     }
 }
 
