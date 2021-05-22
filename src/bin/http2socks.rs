@@ -131,7 +131,7 @@ async fn main() -> io::Result<()> {
     log::info!("config: {}", serde_json::to_string_pretty(&config).unwrap());
 
     let local_addr = config
-        .server_addr
+        .local_addr
         .parse()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid local address"))?;
     let server_addr = config
