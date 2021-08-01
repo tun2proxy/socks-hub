@@ -189,7 +189,7 @@ async fn proxy(
         if req.uri().authority().is_some() {
             let host = req.uri().host().map(|v| v.to_string()).unwrap_or_default();
             let port = req.uri().port_u16().unwrap_or_else(|| 80);
-            tokio::task::spawn(async move {
+            tokio::spawn(async move {
                 match hyper::upgrade::on(req).await {
                     Ok(upgraded) => {
                         if let Err(e) = tunnel(upgraded, host, port, server_addr).await {
