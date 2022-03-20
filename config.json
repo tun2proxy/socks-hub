@@ -1,4 +1,6 @@
 {
-	"local_addr": "127.0.0.1:8100",
-	"server_addr": "127.0.0.1:8080"
+	"local_addr": "127.0.0.1:8111",
+	"server_addr": "127.0.0.1:8080",
+	"username": "username",
+	"password": "password"
 }

@@ -4,10 +4,11 @@ use std::{fs, io};
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Default)]
-#[serde(default)]
 pub struct Config {
     pub local_addr: String,
     pub server_addr: String,
+    pub username: String,
+    pub password: String,
 }
 
 impl Config {

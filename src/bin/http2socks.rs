@@ -7,6 +7,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use hyper::client::Client;
+use hyper::header::{HeaderValue, PROXY_AUTHORIZATION};
 use hyper::server::Server;
 use hyper::service::{make_service_fn, service_fn, Service};
 use hyper::upgrade::Upgraded;
@@ -142,13 +143,19 @@ async fn main() -> io::Result<()> {
         .http1_title_case_headers(true)
         .http1_preserve_header_case(true)
         .build::<_, hyper::Body>(SocksConnector::new(server_addr));
+    let username = config.username;
+    let password = config.password;
 
     let make_service = make_service_fn(move |_| {
         let client = client.clone();
+        let username = username.clone();
+        let password = password.clone();
         async move {
             Ok::<_, hyper::Error>(service_fn(move |req| {
                 let client = client.clone();
-                let fut = async move { proxy(client, req, server_addr).await };
+                let username = username.clone();
+                let password = password.clone();
+                let fut = async move { proxy(client, req, server_addr, username, password).await };
                 fut
             }))
         }
@@ -165,12 +172,41 @@ async fn main() -> io::Result<()> {
     Ok(())
 }
 
+fn proxy_authorization(
+    username: &str,
+    password: &str,
+    authorization: Option<&HeaderValue>,
+) -> bool {
+    match authorization {
+        Some(v) => {
+            let v = v
+                .to_str()
+                .unwrap_or_default()
+                .strip_prefix("Basic ")
+                .unwrap_or_default();
+            match base64::decode(v) {
+                Ok(v) => v == format!("{}:{}", username, password).as_bytes(),
+                Err(_) => return false,
+            }
+        }
+        None => false,
+    }
+}
+
 async fn proxy(
     client: SocksClient,
     req: Request<Body>,
     server_addr: SocketAddr,
+    username: String,
+    password: String,
 ) -> Result<Response<Body>, hyper::Error> {
     log::debug!("req: {:?}", req);
+    if !proxy_authorization(&username, &password, req.headers().get(PROXY_AUTHORIZATION)) {
+        log::error!("authorization fail");
+        let mut resp = Response::new(Body::empty());
+        *resp.status_mut() = http::StatusCode::PROXY_AUTHENTICATION_REQUIRED;
+        return Ok(resp);
+    }
 
     if Method::CONNECT == req.method() {
         // Received an HTTP request like:
