@@ -177,6 +177,9 @@ fn proxy_authorization(
     password: &str,
     authorization: Option<&HeaderValue>,
 ) -> bool {
+    if username.is_empty() || password.is_empty() {
+        return false;
+    }
     match authorization {
         Some(v) => {
             let v = v

@@ -7,7 +7,9 @@ use serde_derive::{Deserialize, Serialize};
 pub struct Config {
     pub local_addr: String,
     pub server_addr: String,
+    #[serde(default)]
     pub username: String,
+    #[serde(default)]
     pub password: String,
 }
 
