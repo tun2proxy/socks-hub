@@ -24,6 +24,13 @@ impl Config {
             }
         };
 
+        if (config.username.is_empty() && !config.password.is_empty())
+            || (!config.username.is_empty() && config.password.is_empty())
+        {
+            log::error!("username/password invalid");
+            return Err(io::ErrorKind::Other.into());
+        }
+
         Ok(config)
     }
 }

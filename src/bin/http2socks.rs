@@ -180,28 +180,21 @@ fn proxy_authorization(
     if username.is_empty() && password.is_empty() {
         return true;
     }
-    if username.is_empty() || password.is_empty() {
-        return false;
-    }
     match authorization {
-        Some(v) => {
-            let v = v
-                .to_str()
-                .unwrap_or_default()
-                .strip_prefix("Basic ")
-                .unwrap_or_default();
-            match base64::decode(v) {
+        Some(v) => match v.to_str().unwrap_or_default().strip_prefix("Basic ") {
+            Some(v) => match base64::decode(v) {
                 Ok(v) => v == format!("{}:{}", username, password).as_bytes(),
-                Err(_) => return false,
-            }
-        }
+                Err(_) => false,
+            },
+            None => false,
+        },
         None => false,
     }
 }
 
 async fn proxy(
     client: SocksClient,
-    req: Request<Body>,
+    mut req: Request<Body>,
     server_addr: SocketAddr,
     username: String,
     password: String,
@@ -213,6 +206,7 @@ async fn proxy(
         *resp.status_mut() = http::StatusCode::PROXY_AUTHENTICATION_REQUIRED;
         return Ok(resp);
     }
+    let _ = req.headers_mut().remove(PROXY_AUTHORIZATION);
 
     if Method::CONNECT == req.method() {
         // Received an HTTP request like:
