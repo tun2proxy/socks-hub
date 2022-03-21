@@ -143,19 +143,18 @@ async fn main() -> io::Result<()> {
         .http1_title_case_headers(true)
         .http1_preserve_header_case(true)
         .build::<_, hyper::Body>(SocksConnector::new(server_addr));
-    let username = config.username;
-    let password = config.password;
+    let authorization = format!("{}:{}", config.username, config.password)
+        .as_bytes()
+        .to_vec();
 
     let make_service = make_service_fn(move |_| {
         let client = client.clone();
-        let username = username.clone();
-        let password = password.clone();
+        let authorization = authorization.clone();
         async move {
             Ok::<_, hyper::Error>(service_fn(move |req| {
                 let client = client.clone();
-                let username = username.clone();
-                let password = password.clone();
-                let fut = async move { proxy(client, req, server_addr, username, password).await };
+                let authorization = authorization.clone();
+                let fut = async move { proxy(client, req, server_addr, authorization).await };
                 fut
             }))
         }
@@ -172,18 +171,14 @@ async fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn proxy_authorization(
-    username: &str,
-    password: &str,
-    authorization: Option<&HeaderValue>,
-) -> bool {
-    if username.is_empty() && password.is_empty() {
+fn proxy_authorization(authorization: &[u8], header_value: Option<&HeaderValue>) -> bool {
+    if authorization == b":" {
         return true;
     }
-    match authorization {
+    match header_value {
         Some(v) => match v.to_str().unwrap_or_default().strip_prefix("Basic ") {
             Some(v) => match base64::decode(v) {
-                Ok(v) => v == format!("{}:{}", username, password).as_bytes(),
+                Ok(v) => v == authorization,
                 Err(_) => false,
             },
             None => false,
@@ -196,11 +191,10 @@ async fn proxy(
     client: SocksClient,
     mut req: Request<Body>,
     server_addr: SocketAddr,
-    username: String,
-    password: String,
+    authorization: Vec<u8>,
 ) -> Result<Response<Body>, hyper::Error> {
     log::debug!("req: {:?}", req);
-    if !proxy_authorization(&username, &password, req.headers().get(PROXY_AUTHORIZATION)) {
+    if !proxy_authorization(&authorization, req.headers().get(PROXY_AUTHORIZATION)) {
         log::error!("authorization fail");
         let mut resp = Response::new(Body::empty());
         *resp.status_mut() = http::StatusCode::PROXY_AUTHENTICATION_REQUIRED;
