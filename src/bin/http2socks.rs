@@ -22,12 +22,12 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone)]
 struct SocksConnector {
-    address: SocketAddr,
+    addr: SocketAddr,
 }
 
 impl SocksConnector {
-    fn new(address: SocketAddr) -> SocksConnector {
-        SocksConnector { address }
+    fn new(addr: SocketAddr) -> SocksConnector {
+        SocksConnector { addr }
     }
 }
 
@@ -46,10 +46,10 @@ impl Service<Uri> for SocksConnector {
         let host = uri.host().map(|v| v.to_string()).unwrap_or_default();
         let port = uri.port_u16().unwrap_or_else(|| 80);
         log::debug!("proxy address {}:{}", host, port);
-        let address = self.address;
+        let addr = self.addr;
         let fut = async move {
-            log::debug!("connect to address {:?}", address);
-            let mut stream = timeout(CONNECT_TIMEOUT, TcpStream::connect(address)).await??;
+            log::debug!("connect to address {:?}", addr);
+            let mut stream = timeout(CONNECT_TIMEOUT, TcpStream::connect(addr)).await??;
             handshake(&mut stream, CONNECT_TIMEOUT, host, port).await?;
             Ok(stream)
         };
