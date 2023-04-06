@@ -6,6 +6,10 @@ use std::str::FromStr;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use base64::alphabet;
+use base64::engine::general_purpose::PAD;
+use base64::engine::GeneralPurpose;
+use base64::Engine;
 use hyper::client::Client;
 use hyper::header::{HeaderValue, PROXY_AUTHORIZATION};
 use hyper::server::Server;
@@ -177,7 +181,7 @@ fn proxy_authorization(authorization: &[u8], header_value: Option<&HeaderValue>)
     }
     match header_value {
         Some(v) => match v.to_str().unwrap_or_default().strip_prefix("Basic ") {
-            Some(v) => match base64::decode(v) {
+            Some(v) => match GeneralPurpose::new(&alphabet::STANDARD, PAD).decode(v) {
                 Ok(v) => v == authorization,
                 Err(_) => false,
             },
