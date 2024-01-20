@@ -1,12 +1,8 @@
-use std::env;
-use std::process;
-
 use crate::config::Config;
-
 use getopts::Options;
 
 pub fn parse_args(name: &str) -> Option<Config> {
-    let args: Vec<String> = env::args().collect();
+    let args: Vec<String> = std::env::args().collect();
 
     let mut opts = Options::new();
     opts.optopt("c", "", "configuration path", "config");
@@ -22,7 +18,7 @@ pub fn parse_args(name: &str) -> Option<Config> {
 
     if matches.opt_present("h") {
         print!("{}", opts.usage(&format!("Usage: {} -c PATH", name)));
-        process::exit(0);
+        std::process::exit(0);
     }
 
     let path = matches.opt_str("c").unwrap_or_default();
