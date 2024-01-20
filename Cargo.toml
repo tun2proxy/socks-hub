@@ -1,19 +1,19 @@
 [package]
-name = "http2socks"
+name = "socks-hub"
 version = "0.1.0"
 license = "MIT"
-repository = "https://github.com/cssivision/http2socks"
-homepage = "https://github.com/cssivision/http2socks"
-authors = ["cssivision <cssivision@gmail.com>"]
-description = "http to socks proxy."
+repository = "https://github.com/ssrlive/socks-hub"
+homepage = "https://github.com/ssrlive/socks-hub"
+authors = ["ssrlive", "cssivision <cssivision@gmail.com>"]
+description = "http or socks to socks proxy."
 readme = "README.md"
 edition = "2021"
 
 [dependencies]
 base64 = "0.21"
+clap = { version = "4.4", features = ["derive"] }
+dotenvy = "0.15"
 env_logger = "0.11"
-getopts = "0.2"
-http = "0.2"
 hyper = { version = "0.14", features = ["full"] }
 log = "0.4"
 serde = "1.0"
