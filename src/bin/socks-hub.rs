@@ -19,6 +19,12 @@ async fn main() -> Result<(), BoxError> {
 
     log::info!("config: {}", serde_json::to_string_pretty(&config)?);
 
-    main_entry(&config).await?;
+    let (tx, quit) = tokio::sync::mpsc::channel::<()>(1);
+    ctrlc2::set_async_handler(async move {
+        tx.send(()).await.unwrap();
+    })
+    .await;
+
+    main_entry(&config, quit).await?;
     Ok(())
 }
