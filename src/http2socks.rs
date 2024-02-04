@@ -1,4 +1,4 @@
-use crate::{base64_decode, Base64Engine, BoxError, Config, Credentials, TokioIo};
+use crate::{base64_decode, s5_handshake, std_io_error_other, Base64Engine, BoxError, Config, Credentials, TokioIo, CONNECT_TIMEOUT};
 use bytes::Bytes;
 use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::{
@@ -7,14 +7,12 @@ use hyper::{
     upgrade::Upgraded,
     Method, Request, Response,
 };
-use socks5_impl::protocol::{self, handshake, Address, AsyncStreamOperation, AuthMethod, Command};
-use std::{net::SocketAddr, time::Duration};
+use socks5_impl::protocol::Address;
+use std::net::SocketAddr;
 use tokio::{
     net::{TcpListener, TcpStream},
     time::timeout,
 };
-
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 static HTTP_CREDENTIALS: std::sync::OnceLock<Credentials> = std::sync::OnceLock::new();
 
@@ -152,30 +150,4 @@ fn verify_basic_authorization(credentials: &Credentials, header_value: Option<&H
         .and_then(|s| s.strip_prefix("Basic "))
         .and_then(|v| base64_decode(v, Base64Engine::Standard).ok())
         .map_or(false, |v| v == credentials.to_vec())
-}
-
-async fn s5_handshake(conn: &mut TcpStream, dur: Duration, dst: Address) -> std::io::Result<()> {
-    let fut = async move {
-        log::trace!("write socks5 version and auth method");
-        let s5req = handshake::Request::new(vec![AuthMethod::NoAuth]);
-        s5req.write_to_async_stream(conn).await?;
-
-        log::trace!("read server socks version and mthod");
-        let _s5resp = handshake::Response::retrieve_from_async_stream(conn).await?;
-
-        log::trace!("write socks5 version, command, address type and address");
-        let s5req = protocol::Request::new(Command::Connect, dst);
-        s5req.write_to_async_stream(conn).await?;
-
-        log::trace!("read server response");
-        let s5resp = protocol::Response::retrieve_from_async_stream(conn).await?;
-        log::trace!("server response: {:?}", s5resp);
-
-        Ok(())
-    };
-    timeout(dur, fut).await?
-}
-
-pub fn std_io_error_other<E: Into<BoxError>>(err: E) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::Other, err)
 }

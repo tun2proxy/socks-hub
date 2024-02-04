@@ -5,6 +5,10 @@ use std::net::SocketAddr;
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize)]
 #[command(author, version, about = "socks-hub application.", long_about = None)]
 pub struct Config {
+    /// Source type
+    #[arg(short = 't', long, value_name = "http|socks5", default_value = "http")]
+    pub source_type: SourceType,
+
     /// Local listening address
     #[arg(short, long, value_name = "IP:port")]
     pub local_addr: SocketAddr,
@@ -13,11 +17,11 @@ pub struct Config {
     #[arg(short, long, value_name = "IP:port")]
     pub server_addr: SocketAddr,
 
-    /// HTTP client authentication username
+    /// Client authentication username, available both for HTTP and SOCKS5, optional
     #[arg(short, long, value_name = "username")]
     pub username: Option<String>,
 
-    /// HTTP client authentication password
+    /// Client authentication password, available both for HTTP and SOCKS5, optional
     #[arg(short, long, value_name = "password")]
     pub password: Option<String>,
 
@@ -31,6 +35,7 @@ impl Default for Config {
         let local_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
         let server_addr: SocketAddr = "127.0.0.1:1080".parse().unwrap();
         Config {
+            source_type: SourceType::Http,
             local_addr,
             server_addr,
             username: None,
@@ -54,6 +59,11 @@ impl Config {
         }
     }
 
+    pub fn source_type(&mut self, source_type: SourceType) -> &mut Self {
+        self.source_type = source_type;
+        self
+    }
+
     pub fn username(&mut self, username: &str) -> &mut Self {
         self.username = Some(username.to_string());
         self
@@ -75,6 +85,13 @@ impl Config {
             password: self.password.clone(),
         }
     }
+}
+
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum, Serialize, Deserialize)]
+pub enum SourceType {
+    #[default]
+    Http,
+    Socks5,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum, Serialize, Deserialize)]
