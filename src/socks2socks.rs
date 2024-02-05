@@ -1,4 +1,4 @@
-use crate::{s5_handshake, BoxError, Config, Result, CONNECT_TIMEOUT};
+use crate::{BoxError, Config, Result, CONNECT_TIMEOUT};
 use socks5_impl::{
     protocol::{Address, Reply, UdpHeader},
     server::{
@@ -8,11 +8,7 @@ use socks5_impl::{
     },
 };
 use std::{net::SocketAddr, sync::Arc};
-use tokio::{
-    net::{TcpStream, UdpSocket},
-    sync::mpsc::Receiver,
-    time::timeout,
-};
+use tokio::{net::UdpSocket, sync::mpsc::Receiver};
 
 pub(crate) static MAX_UDP_RELAY_PACKET_SIZE: usize = 1500;
 
@@ -91,11 +87,9 @@ where
 }
 
 async fn handle_s5_client_connection(connect: Connect<connect::NeedReply>, dst: Address, server: SocketAddr) -> Result<()> {
-    let mut stream = timeout(CONNECT_TIMEOUT, TcpStream::connect(server)).await??;
-    s5_handshake(&mut stream, CONNECT_TIMEOUT, dst).await?;
-
+    let mut stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, None).await?;
     let mut conn = connect.reply(Reply::Succeeded, Address::unspecified()).await?;
-    log::trace!("{} -> {}", conn.peer_addr()?, stream.peer_addr()?);
+    log::trace!("{} -> {}", conn.peer_addr()?, dst);
 
     tokio::io::copy_bidirectional(&mut stream, &mut conn).await?;
 

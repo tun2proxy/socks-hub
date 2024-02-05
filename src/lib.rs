@@ -13,9 +13,13 @@ mod socks2socks;
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T, E = BoxError> = std::result::Result<T, E>;
 
-use socks5_impl::protocol::{self, handshake, Address, AsyncStreamOperation, AuthMethod, Command};
+use socks5_impl::protocol::{Address, UserKey};
 use std::time::Duration;
-use tokio::{net::TcpStream, sync::mpsc::Receiver, time::timeout};
+use tokio::{
+    net::{TcpStream, ToSocketAddrs},
+    sync::mpsc::Receiver,
+    time::timeout,
+};
 
 pub async fn main_entry(config: &Config, quit: Receiver<()>) -> Result<(), BoxError> {
     match config.source_type {
@@ -26,26 +30,16 @@ pub async fn main_entry(config: &Config, quit: Receiver<()>) -> Result<(), BoxEr
 
 pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
-pub(crate) async fn s5_handshake(conn: &mut TcpStream, dur: Duration, dst: Address) -> std::io::Result<()> {
-    let fut = async move {
-        log::trace!("write socks5 version and auth method");
-        let s5req = handshake::Request::new(vec![AuthMethod::NoAuth]);
-        s5req.write_to_async_stream(conn).await?;
-
-        log::trace!("read server socks version and mthod");
-        let _s5resp = handshake::Response::retrieve_from_async_stream(conn).await?;
-
-        log::trace!("write socks5 version, command, address type and address");
-        let s5req = protocol::Request::new(Command::Connect, dst);
-        s5req.write_to_async_stream(conn).await?;
-
-        log::trace!("read server response");
-        let s5resp = protocol::Response::retrieve_from_async_stream(conn).await?;
-        log::trace!("server response: {:?}", s5resp);
-
-        Ok(())
-    };
-    timeout(dur, fut).await?
+pub(crate) async fn create_s5_connect<A: ToSocketAddrs>(
+    server: A,
+    dur: Duration,
+    dst: &Address,
+    auth: Option<UserKey>,
+) -> std::io::Result<tokio::io::BufStream<TcpStream>> {
+    let stream = timeout(dur, TcpStream::connect(server)).await??;
+    let mut stream = tokio::io::BufStream::new(stream);
+    socks5_impl::client::connect(&mut stream, dst, auth).await?;
+    Ok(stream)
 }
 
 pub(crate) fn std_io_error_other<E: Into<BoxError>>(err: E) -> std::io::Error {

@@ -1,4 +1,4 @@
-use crate::{base64_decode, s5_handshake, std_io_error_other, Base64Engine, BoxError, Config, Credentials, TokioIo, CONNECT_TIMEOUT};
+use crate::{base64_decode, std_io_error_other, Base64Engine, BoxError, Config, Credentials, TokioIo, CONNECT_TIMEOUT};
 use bytes::Bytes;
 use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::{
@@ -9,24 +9,18 @@ use hyper::{
 };
 use socks5_impl::protocol::Address;
 use std::net::SocketAddr;
-use tokio::{
-    net::{TcpListener, TcpStream},
-    time::timeout,
-};
-
-static HTTP_CREDENTIALS: std::sync::OnceLock<Credentials> = std::sync::OnceLock::new();
+use tokio::net::TcpListener;
 
 pub async fn main_entry(config: &Config, mut quit: tokio::sync::mpsc::Receiver<()>) -> Result<(), BoxError> {
     let local_addr = config.local_addr;
-    let server_addr = config.server_addr;
-    let credentials = config.get_credentials();
-
-    HTTP_CREDENTIALS.get_or_init(|| credentials.clone());
 
     let listener = TcpListener::bind(local_addr).await?;
     log::info!("Listening on http://{}", local_addr);
 
+    let config = std::sync::Arc::new(config.clone());
+
     loop {
+        let config = config.clone();
         tokio::select! {
             _ = quit.recv() => {
                 log::info!("quit signal received");
@@ -34,14 +28,17 @@ pub async fn main_entry(config: &Config, mut quit: tokio::sync::mpsc::Receiver<(
             }
             result = listener.accept() => {
                 let (stream, _) = result?;
-                let io = TokioIo::new(stream);
                 tokio::task::spawn(async move {
+                    let io = TokioIo::new(stream);
                     if let Err(err) = hyper::server::conn::http1::Builder::new()
                         .preserve_header_case(true)
                         .title_case_headers(true)
                         .serve_connection(
                             io,
-                            service_fn(|req: Request<hyper::body::Incoming>| async move { proxy(req, server_addr).await }),
+                            service_fn(|req: Request<hyper::body::Incoming>| {
+                                let config = config.clone();
+                                async move { proxy(req, config).await }
+                            }),
                         )
                         .with_upgrades()
                         .await
@@ -57,15 +54,17 @@ pub async fn main_entry(config: &Config, mut quit: tokio::sync::mpsc::Receiver<(
 
 async fn proxy(
     mut req: Request<hyper::body::Incoming>,
-    server: SocketAddr,
+    config: std::sync::Arc<Config>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, std::io::Error> {
     //
     // https://github.com/hyperium/hyper/blob/90eb95f62a32981cb662b0f750027231d8a2586b/examples/http_proxy.rs#L51
     //
     log::trace!("req: {:?}", req);
 
-    let credentials = HTTP_CREDENTIALS.get().unwrap();
-    if !verify_basic_authorization(credentials, req.headers().get(AUTHORIZATION)) {
+    let server = config.server_addr;
+    let credentials = config.get_credentials();
+
+    if !verify_basic_authorization(&credentials, req.headers().get(AUTHORIZATION)) {
         log::error!("authorization fail");
         let mut resp = Response::new(empty());
         *resp.status_mut() = hyper::StatusCode::UNAUTHORIZED;
@@ -75,7 +74,6 @@ async fn proxy(
 
     if Method::CONNECT == req.method() {
         if let Some(host) = req.uri().host() {
-            // uri.authority().and_then(|auth| Some(auth.to_string()))
             let port = req.uri().port_u16().unwrap_or(80);
             let s5addr = Address::from((host, port));
 
@@ -103,8 +101,7 @@ async fn proxy(
 
         log::debug!("destination address {}", s5addr);
         log::debug!("connect to SOCKS5 proxy server {:?}", server);
-        let mut stream = timeout(CONNECT_TIMEOUT, TcpStream::connect(server)).await??;
-        s5_handshake(&mut stream, CONNECT_TIMEOUT, s5addr).await?;
+        let stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &s5addr, None).await?;
         let io = TokioIo::new(stream);
         let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
             .preserve_header_case(true)
@@ -134,8 +131,7 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
 // the upgraded connection
 async fn tunnel(upgraded: Upgraded, dst: Address, server: SocketAddr) -> std::io::Result<()> {
     let mut upgraded = TokioIo::new(upgraded);
-    let mut server = timeout(CONNECT_TIMEOUT, TcpStream::connect(server)).await??;
-    s5_handshake(&mut server, CONNECT_TIMEOUT, dst).await?;
+    let mut server = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, None).await?;
     let (from_client, from_server) = tokio::io::copy_bidirectional(&mut upgraded, &mut server).await?;
     log::debug!("client wrote {} bytes and received {} bytes", from_client, from_server);
     Ok(())
