@@ -10,6 +10,10 @@ pub use tokiort::{TokioExecutor, TokioIo, TokioTimer};
 mod http2socks;
 mod socks2socks;
 
+mod api;
+mod dump_logger;
+mod ffi;
+
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T, E = BoxError> = std::result::Result<T, E>;
 

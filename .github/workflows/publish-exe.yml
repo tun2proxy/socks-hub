@@ -62,13 +62,14 @@ jobs:
           else
             cargo build --all-features --release --target ${{ matrix.target }}
           fi
+          cbindgen -c cbindgen.toml -l C -o ./socks_hub_ffi.h
           if [[ "${{ matrix.host_os }}" == "windows-latest" ]]; then
             powershell -Command "(Get-Item README.md).LastWriteTime = Get-Date"
-            powershell Compress-Archive -Path target/${{ matrix.target }}/release/socks-hub.exe, README.md -DestinationPath mypubdir4/socks-hub-${{ matrix.target }}.zip
+            powershell Compress-Archive -Path target/${{ matrix.target }}/release/socks-hub.exe, ./README.md, ./socks_hub_ffi.h, target/${{ matrix.target }}/release/socks_hub.dll -DestinationPath mypubdir4/socks-hub-${{ matrix.target }}.zip
           elif [[ "${{ matrix.host_os }}" == "macos-latest" ]]; then
-            zip -j mypubdir4/socks-hub-${{ matrix.target }}.zip target/${{ matrix.target }}/release/socks-hub README.md
+            zip -j mypubdir4/socks-hub-${{ matrix.target }}.zip target/${{ matrix.target }}/release/socks-hub ./README.md ./socks_hub_ffi.h target/${{ matrix.target }}/release/libsocks_hub.dylib
           elif [[ "${{ matrix.host_os }}" == "ubuntu-latest" ]]; then
-            zip -j mypubdir4/socks-hub-${{ matrix.target }}.zip target/${{ matrix.target }}/release/socks-hub README.md
+            zip -j mypubdir4/socks-hub-${{ matrix.target }}.zip target/${{ matrix.target }}/release/socks-hub ./README.md ./socks_hub_ffi.h target/${{ matrix.target }}/release/libsocks_hub.so
           fi
 
       - name: Publish

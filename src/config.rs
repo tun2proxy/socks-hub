@@ -64,6 +64,16 @@ impl Config {
         self
     }
 
+    pub fn local_addr(&mut self, local_addr: SocketAddr) -> &mut Self {
+        self.local_addr = local_addr;
+        self
+    }
+
+    pub fn server_addr(&mut self, server_addr: SocketAddr) -> &mut Self {
+        self.server_addr = server_addr;
+        self
+    }
+
     pub fn username(&mut self, username: &str) -> &mut Self {
         self.username = Some(username.to_string());
         self
@@ -87,22 +97,49 @@ impl Config {
     }
 }
 
+#[repr(C)]
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum, Serialize, Deserialize)]
 pub enum SourceType {
     #[default]
-    Http,
+    Http = 0,
     Socks5,
 }
 
+#[repr(C)]
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum, Serialize, Deserialize)]
 pub enum ArgVerbosity {
-    Off,
+    Off = 0,
     Error,
     Warn,
     #[default]
     Info,
     Debug,
     Trace,
+}
+
+impl From<ArgVerbosity> for log::LevelFilter {
+    fn from(verbosity: ArgVerbosity) -> Self {
+        match verbosity {
+            ArgVerbosity::Off => log::LevelFilter::Off,
+            ArgVerbosity::Error => log::LevelFilter::Error,
+            ArgVerbosity::Warn => log::LevelFilter::Warn,
+            ArgVerbosity::Info => log::LevelFilter::Info,
+            ArgVerbosity::Debug => log::LevelFilter::Debug,
+            ArgVerbosity::Trace => log::LevelFilter::Trace,
+        }
+    }
+}
+
+impl From<log::Level> for ArgVerbosity {
+    fn from(level: log::Level) -> Self {
+        match level {
+            log::Level::Error => ArgVerbosity::Error,
+            log::Level::Warn => ArgVerbosity::Warn,
+            log::Level::Info => ArgVerbosity::Info,
+            log::Level::Debug => ArgVerbosity::Debug,
+            log::Level::Trace => ArgVerbosity::Trace,
+        }
+    }
 }
 
 impl std::fmt::Display for ArgVerbosity {

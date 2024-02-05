@@ -1,6 +1,6 @@
 [package]
 name = "socks-hub"
-version = "0.1.3"
+version = "0.1.4"
 license = "MIT"
 repository = "https://github.com/ssrlive/socks-hub"
 homepage = "https://github.com/ssrlive/socks-hub"
@@ -9,10 +9,14 @@ description = "http or socks to socks proxy."
 readme = "README.md"
 edition = "2021"
 
+[lib]
+crate-type = ["staticlib", "cdylib", "lib"]
+
 [dependencies]
 as-any = "0.3"
 base64 = "0.21"
 bytes = "1.5"
+chrono = "0.4"
 clap = { version = "4.4", features = ["derive"] }
 ctrlc2 = { version = "3.5", features = ["termination", "tokio"] }
 dotenvy = "0.15"

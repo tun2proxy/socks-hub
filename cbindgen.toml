@@ -1,0 +1,3 @@
+[export]
+include = ["socks_hub_run", "socks_hub_set_log_callback", "socks_hub_stop"]
+# exclude = ["Java_com_github_shadowsocks_bg_run", "Java_com_github_shadowsocks_bg_stop"]
