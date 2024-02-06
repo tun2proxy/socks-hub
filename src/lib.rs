@@ -5,7 +5,7 @@ pub mod base64_wrapper;
 pub use base64_wrapper::{base64_decode, base64_encode, Base64Engine};
 
 mod tokiort;
-pub use tokiort::{TokioExecutor, TokioIo, TokioTimer};
+use tokiort::TokioIo;
 
 mod http2socks;
 mod socks2socks;

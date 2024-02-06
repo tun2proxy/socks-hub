@@ -27,28 +27,32 @@ pub async fn main_entry(config: &Config, mut quit: tokio::sync::mpsc::Receiver<(
                 break;
             }
             result = listener.accept() => {
-                let (stream, _) = result?;
+                let (stream, incoming) = result?;
                 tokio::task::spawn(async move {
-                    let io = TokioIo::new(stream);
-                    if let Err(err) = hyper::server::conn::http1::Builder::new()
-                        .preserve_header_case(true)
-                        .title_case_headers(true)
-                        .serve_connection(
-                            io,
-                            service_fn(|req: Request<hyper::body::Incoming>| {
-                                let config = config.clone();
-                                async move { proxy(req, config).await }
-                            }),
-                        )
-                        .with_upgrades()
-                        .await
-                    {
-                        log::error!("Failed to serve connection: {:?}", err);
+                    if let Err(err) = build_http_service(stream, config).await {
+                        log::error!("http service on incoming {} error: {}", incoming, err);
                     }
                 });
             }
         }
     }
+    Ok(())
+}
+
+async fn build_http_service(stream: tokio::net::TcpStream, config: std::sync::Arc<Config>) -> Result<(), BoxError> {
+    let io = TokioIo::new(stream);
+    hyper::server::conn::http1::Builder::new()
+        .preserve_header_case(true)
+        .title_case_headers(true)
+        .serve_connection(
+            io,
+            service_fn(|req: Request<hyper::body::Incoming>| {
+                let config = config.clone();
+                async move { proxy(req, config).await }
+            }),
+        )
+        .with_upgrades()
+        .await?;
     Ok(())
 }
 

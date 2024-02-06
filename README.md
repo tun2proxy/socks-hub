@@ -33,7 +33,7 @@ cargo install socks-hub
 socks-hub -h
 socks-hub application.
 
-Usage: socks-hub.exe [OPTIONS] --local-addr <IP:port> --server-addr <IP:port>
+Usage: socks-hub [OPTIONS] --local-addr <IP:port> --server-addr <IP:port>
 
 Options:
   -t, --source-type <http|socks5>  Source type [default: http] [possible values: http, socks5]
