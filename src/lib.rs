@@ -18,17 +18,20 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T, E = BoxError> = std::result::Result<T, E>;
 
 use socks5_impl::protocol::{Address, UserKey};
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 use tokio::{
     net::{TcpStream, ToSocketAddrs},
     sync::mpsc::Receiver,
     time::timeout,
 };
 
-pub async fn main_entry(config: &Config, quit: Receiver<()>) -> Result<(), BoxError> {
+pub async fn main_entry<F>(config: &Config, quit: Receiver<()>, callback: Option<F>) -> Result<(), BoxError>
+where
+    F: FnOnce(SocketAddr) + Send + Sync + 'static,
+{
     match config.source_type {
-        SourceType::Http => http2socks::main_entry(config, quit).await,
-        SourceType::Socks5 => socks2socks::main_entry(config, quit).await,
+        SourceType::Http => http2socks::main_entry(config, quit, callback).await,
+        SourceType::Socks5 => socks2socks::main_entry(config, quit, callback).await,
     }
 }
 

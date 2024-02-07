@@ -7,6 +7,7 @@
 //!    $ curl -i https://www.google.com/
 
 use socks_hub::{main_entry, BoxError, Config};
+use std::net::SocketAddr;
 
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {
@@ -25,6 +26,10 @@ async fn main() -> Result<(), BoxError> {
     })
     .await;
 
-    main_entry(&config, quit).await?;
+    let cb = |addr: SocketAddr| {
+        log::info!("Listening on {}", addr);
+    };
+
+    main_entry(&config, quit, Some(cb)).await?;
     Ok(())
 }

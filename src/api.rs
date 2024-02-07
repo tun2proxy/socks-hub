@@ -1,9 +1,12 @@
 use crate::Config;
-use std::{os::raw::c_int, sync::Arc};
+use std::{net::SocketAddr, os::raw::c_int, sync::Arc};
 
 static mut TUN_QUIT: Option<Arc<tokio::sync::mpsc::Sender<()>>> = None;
 
-pub(crate) fn api_internal_run(config: Config) -> c_int {
+pub(crate) fn api_internal_run<F>(config: Config, callback: Option<F>) -> c_int
+where
+    F: FnOnce(SocketAddr) + Send + Sync + 'static,
+{
     if unsafe { TUN_QUIT.is_some() } {
         log::error!("socks-hub already started");
         return -1;
@@ -16,7 +19,7 @@ pub(crate) fn api_internal_run(config: Config) -> c_int {
 
         unsafe { TUN_QUIT = Some(Arc::new(tx)) };
 
-        crate::main_entry(&config, quit).await?;
+        crate::main_entry(&config, quit, callback).await?;
         Ok::<_, crate::BoxError>(())
     };
 

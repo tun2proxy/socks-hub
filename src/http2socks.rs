@@ -9,13 +9,21 @@ use hyper::{
 };
 use socks5_impl::protocol::Address;
 use std::net::SocketAddr;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::mpsc::Receiver};
 
-pub async fn main_entry(config: &Config, mut quit: tokio::sync::mpsc::Receiver<()>) -> Result<(), BoxError> {
+pub async fn main_entry<F>(config: &Config, mut quit: Receiver<()>, callback: Option<F>) -> Result<(), BoxError>
+where
+    F: FnOnce(SocketAddr) + Send + Sync + 'static,
+{
     let local_addr = config.local_addr;
 
     let listener = TcpListener::bind(local_addr).await?;
-    log::info!("Listening on http://{}", local_addr);
+
+    if let Some(callback) = callback {
+        callback(listener.local_addr()?);
+    } else {
+        log::info!("Listening on http://{}", listener.local_addr()?);
+    }
 
     let config = std::sync::Arc::new(config.clone());
 

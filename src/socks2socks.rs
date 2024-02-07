@@ -12,30 +12,44 @@ use tokio::{net::UdpSocket, sync::mpsc::Receiver};
 
 pub(crate) static MAX_UDP_RELAY_PACKET_SIZE: usize = 1500;
 
-pub async fn main_entry(config: &Config, quit: Receiver<()>) -> Result<(), BoxError> {
+pub async fn main_entry<F>(config: &Config, quit: Receiver<()>, callback: Option<F>) -> Result<(), BoxError>
+where
+    F: FnOnce(SocketAddr) + Send + Sync + 'static,
+{
     let listen_addr = config.local_addr;
     let server_addr = config.server_addr;
     let credentials = config.get_credentials();
     match (credentials.username, credentials.password) {
         (Some(username), Some(password)) => {
             let auth = Arc::new(auth::UserKeyAuth::new(&username, &password));
-            main_loop(auth, listen_addr, server_addr, quit).await?;
+            main_loop(auth, listen_addr, server_addr, quit, callback).await?;
         }
         _ => {
             let auth = Arc::new(auth::NoAuth);
-            main_loop(auth, listen_addr, server_addr, quit).await?;
+            main_loop(auth, listen_addr, server_addr, quit, callback).await?;
         }
     }
 
     Ok(())
 }
 
-async fn main_loop<S>(auth: auth::AuthAdaptor<S>, listen_addr: SocketAddr, server: SocketAddr, mut quit: Receiver<()>) -> Result<()>
+async fn main_loop<S, F>(
+    auth: auth::AuthAdaptor<S>,
+    listen_addr: SocketAddr,
+    server: SocketAddr,
+    mut quit: Receiver<()>,
+    callback: Option<F>,
+) -> Result<()>
 where
     S: Send + Sync + 'static,
+    F: FnOnce(SocketAddr) + Send + Sync + 'static,
 {
     let listener = Server::bind(listen_addr, auth).await?;
-    log::info!("Listening on socks5://{}", listen_addr);
+    if let Some(callback) = callback {
+        callback(listener.local_addr()?);
+    } else {
+        log::info!("Listening on socks5://{}", listener.local_addr()?);
+    }
     loop {
         tokio::select! {
             _ = quit.recv() => {
