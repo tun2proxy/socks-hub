@@ -1,6 +1,6 @@
 [package]
 name = "socks-hub"
-version = "0.1.5"
+version = "0.1.6"
 license = "MIT"
 repository = "https://github.com/ssrlive/socks-hub"
 homepage = "https://github.com/ssrlive/socks-hub"
@@ -17,7 +17,7 @@ as-any = "0.3"
 base64 = "0.21"
 bytes = "1.5"
 chrono = "0.4"
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 ctrlc2 = { version = "3.5", features = ["termination", "tokio"] }
 dotenvy = "0.15"
 env_logger = "0.11"

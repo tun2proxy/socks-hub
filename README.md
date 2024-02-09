@@ -23,6 +23,7 @@ Download the binary from [releases](https://github.com/ssrlive/socks-hub/release
 
 ### Install from source
 
+If you have [rust](https://rustup.rs/) toolchain installed, this should work:
 ```shell
 cargo install socks-hub
 ```
