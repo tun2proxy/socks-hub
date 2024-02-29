@@ -2,7 +2,7 @@ use crate::{base64_decode, std_io_error_other, Base64Engine, BoxError, Config, C
 use bytes::Bytes;
 use http_body_util::{combinators::BoxBody, BodyExt};
 use hyper::{
-    header::{HeaderValue, AUTHORIZATION},
+    header::{HeaderName, HeaderValue, AUTHORIZATION, PROXY_AUTHORIZATION},
     service::service_fn,
     upgrade::Upgraded,
     Method, Request, Response,
@@ -76,13 +76,15 @@ async fn proxy(
     let server = config.server_addr;
     let credentials = config.get_credentials();
 
-    if !verify_basic_authorization(&credentials, req.headers().get(AUTHORIZATION)) {
-        log::error!("authorization fail");
-        let mut resp = Response::new(empty());
-        *resp.status_mut() = hyper::StatusCode::UNAUTHORIZED;
-        return Ok(resp);
+    fn get_proxy_authorization(req: &Request<hyper::body::Incoming>) -> (Option<HeaderName>, Option<&HeaderValue>) {
+        if let Some(header) = req.headers().get(AUTHORIZATION) {
+            (Some(AUTHORIZATION), Some(header))
+        } else if let Some(header) = req.headers().get(PROXY_AUTHORIZATION) {
+            (Some(PROXY_AUTHORIZATION), Some(header))
+        } else {
+            (None, None)
+        }
     }
-    let _ = req.headers_mut().remove(AUTHORIZATION);
 
     if Method::CONNECT == req.method() {
         if let Some(host) = req.uri().host() {
@@ -107,6 +109,17 @@ async fn proxy(
             Ok(resp)
         }
     } else {
+        let (auth_header, auth_value) = get_proxy_authorization(&req);
+        if !verify_basic_authorization(&credentials, auth_value) {
+            log::error!("authorization fail");
+            let mut resp = Response::new(empty());
+            *resp.status_mut() = hyper::StatusCode::UNAUTHORIZED;
+            return Ok(resp);
+        }
+        if let Some(auth_header) = auth_header {
+            let _ = req.headers_mut().remove(auth_header);
+        }
+
         let host = req.uri().host().unwrap_or_default();
         let port = req.uri().port_u16().unwrap_or(80);
         let s5addr = Address::from((host, port));
