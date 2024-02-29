@@ -19,7 +19,7 @@ where
     let listen_addr = config.local_addr;
     let server_addr = config.server_addr;
     let credentials = config.get_credentials();
-    let s5_auth = config.get_socks5_credentials();
+    let s5_auth = config.get_s5_credentials().try_into().ok();
     match (credentials.username, credentials.password) {
         (Some(username), Some(password)) => {
             let auth = Arc::new(auth::UserKeyAuth::new(&username, &password));

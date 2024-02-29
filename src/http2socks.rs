@@ -75,7 +75,7 @@ async fn proxy(
 
     let server = config.server_addr;
     let credentials = config.get_credentials();
-    let s5_auth = config.get_socks5_credentials();
+    let s5_auth = config.get_s5_credentials().try_into().ok();
 
     fn get_proxy_authorization(req: &Request<hyper::body::Incoming>) -> (Option<HeaderName>, Option<&HeaderValue>) {
         if let Some(header) = req.headers().get(AUTHORIZATION) {

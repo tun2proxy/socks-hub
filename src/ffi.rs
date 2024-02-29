@@ -1,6 +1,6 @@
 #![cfg(not(target_os = "android"))]
 
-use crate::{ArgVerbosity, Config, SourceType};
+use crate::{ArgVerbosity, Config, ProxyType};
 use std::{
     net::SocketAddr,
     os::raw::{c_char, c_int, c_void},
@@ -31,7 +31,7 @@ unsafe impl Sync for CCallback {}
 /// The `ctx` argument is a pointer to the context, which is an optional pointer that will be passed to the callback function.
 #[no_mangle]
 pub unsafe extern "C" fn socks_hub_run(
-    source_type: SourceType,
+    source_type: ProxyType,
     local_addr: *const c_char,
     server_addr: *const c_char,
     verbosity: ArgVerbosity,

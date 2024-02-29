@@ -1,5 +1,5 @@
 pub mod config;
-pub use config::{ArgVerbosity, Config, Credentials, SourceType};
+pub use config::{ArgVerbosity, Config, Credentials, ProxyType};
 
 pub mod base64_wrapper;
 pub use base64_wrapper::{base64_decode, base64_encode, Base64Engine};
@@ -30,8 +30,8 @@ where
     F: FnOnce(SocketAddr) + Send + Sync + 'static,
 {
     match config.source_type {
-        SourceType::Http => http2socks::main_entry(config, quit, callback).await,
-        SourceType::Socks5 => socks2socks::main_entry(config, quit, callback).await,
+        ProxyType::Http => http2socks::main_entry(config, quit, callback).await,
+        ProxyType::Socks5 => socks2socks::main_entry(config, quit, callback).await,
     }
 }
 

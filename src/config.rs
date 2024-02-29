@@ -4,11 +4,11 @@ use std::net::SocketAddr;
 
 /// Proxy tunnel from HTTP or SOCKS5 to SOCKS5
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize)]
-#[command(author, version, about = "SOCKS5 hub for HTTP and SOCKS5 downstreams proxying.", long_about = None)]
+#[command(author, version, about = "SOCKS5 hub for downstreams proxy of HTTP or SOCKS5.", long_about = None)]
 pub struct Config {
-    /// Source type
+    /// Source proxy type
     #[arg(short = 't', long, value_name = "http|socks5", default_value = "http")]
-    pub source_type: SourceType,
+    pub source_type: ProxyType,
 
     /// Local listening address
     #[arg(short, long, value_name = "IP:port")]
@@ -44,7 +44,7 @@ impl Default for Config {
         let local_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
         let server_addr: SocketAddr = "127.0.0.1:1080".parse().unwrap();
         Config {
-            source_type: SourceType::Http,
+            source_type: ProxyType::Http,
             local_addr,
             server_addr,
             username: None,
@@ -70,7 +70,7 @@ impl Config {
         }
     }
 
-    pub fn source_type(&mut self, source_type: SourceType) -> &mut Self {
+    pub fn source_type(&mut self, source_type: ProxyType) -> &mut Self {
         self.source_type = source_type;
         self
     }
@@ -107,17 +107,17 @@ impl Config {
         }
     }
 
-    pub fn get_socks5_credentials(&self) -> Option<UserKey> {
-        match (self.s5_username.clone(), self.s5_password.clone()) {
-            (Some(u), Some(p)) => Some(UserKey::new(u, p)),
-            _ => None,
+    pub fn get_s5_credentials(&self) -> Credentials {
+        Credentials {
+            username: self.s5_username.clone(),
+            password: self.s5_password.clone(),
         }
     }
 }
 
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum, Serialize, Deserialize)]
-pub enum SourceType {
+pub enum ProxyType {
     #[default]
     Http = 0,
     Socks5,
@@ -191,10 +191,25 @@ impl Credentials {
         let empty = "".to_owned();
         let u = self.username.as_ref().unwrap_or(&empty);
         let p = self.password.as_ref().unwrap_or(&empty);
-        format!("{}:{}", u, p).as_bytes().to_vec()
+        match (u.is_empty(), p.is_empty()) {
+            (true, true) => b"".to_vec(),
+            (true, false) => format!(":{}", p).as_bytes().to_vec(),
+            (false, true) => format!("{}:", u).as_bytes().to_vec(),
+            (false, false) => format!("{}:{}", u, p).as_bytes().to_vec(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.to_vec() == b":".to_vec()
+        self.to_vec().is_empty()
+    }
+}
+
+impl TryFrom<Credentials> for UserKey {
+    type Error = std::io::Error;
+    fn try_from(creds: Credentials) -> Result<Self, Self::Error> {
+        match (creds.username, creds.password) {
+            (Some(u), Some(p)) => Ok(UserKey::new(u, p)),
+            _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "username and password")),
+        }
     }
 }
