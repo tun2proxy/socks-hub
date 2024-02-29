@@ -31,8 +31,7 @@ cargo install socks-hub
 ## Usage
 
 ```shell
-socks-hub -h
-socks-hub application.
+SOCKS5 hub for HTTP and SOCKS5 downstreams proxying.
 
 Usage: socks-hub [OPTIONS] --local-addr <IP:port> --server-addr <IP:port>
 
@@ -42,6 +41,8 @@ Options:
   -s, --server-addr <IP:port>      Remote SOCKS5 server address
   -u, --username <username>        Client authentication username, available both for HTTP and SOCKS5, optional
   -p, --password <password>        Client authentication password, available both for HTTP and SOCKS5, optional
+      --s5-username <username>     SOCKS5 server authentication username, optional
+      --s5-password <password>     SOCKS5 server authentication password, optional
   -v, --verbosity <level>          Log verbosity level [default: info] [possible values: off, error, warn, info, debug, trace]
   -h, --help                       Print help
   -V, --version                    Print version

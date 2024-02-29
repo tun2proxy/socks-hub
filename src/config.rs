@@ -1,9 +1,10 @@
 use serde_derive::{Deserialize, Serialize};
+use socks5_impl::protocol::UserKey;
 use std::net::SocketAddr;
 
 /// Proxy tunnel from HTTP or SOCKS5 to SOCKS5
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize)]
-#[command(author, version, about = "socks-hub application.", long_about = None)]
+#[command(author, version, about = "SOCKS5 hub for HTTP and SOCKS5 downstreams proxying.", long_about = None)]
 pub struct Config {
     /// Source type
     #[arg(short = 't', long, value_name = "http|socks5", default_value = "http")]
@@ -25,6 +26,14 @@ pub struct Config {
     #[arg(short, long, value_name = "password")]
     pub password: Option<String>,
 
+    /// SOCKS5 server authentication username, optional
+    #[arg(long, value_name = "username")]
+    pub s5_username: Option<String>,
+
+    /// SOCKS5 server authentication password, optional
+    #[arg(long, value_name = "password")]
+    pub s5_password: Option<String>,
+
     /// Log verbosity level
     #[arg(short, long, value_name = "level", default_value = "info")]
     pub verbosity: ArgVerbosity,
@@ -40,6 +49,8 @@ impl Default for Config {
             server_addr,
             username: None,
             password: None,
+            s5_username: None,
+            s5_password: None,
             verbosity: ArgVerbosity::Info,
         }
     }
@@ -93,6 +104,13 @@ impl Config {
         Credentials {
             username: self.username.clone(),
             password: self.password.clone(),
+        }
+    }
+
+    pub fn get_socks5_credentials(&self) -> Option<UserKey> {
+        match (self.s5_username.clone(), self.s5_password.clone()) {
+            (Some(u), Some(p)) => Some(UserKey::new(u, p)),
+            _ => None,
         }
     }
 }

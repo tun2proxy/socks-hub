@@ -7,7 +7,7 @@ use hyper::{
     upgrade::Upgraded,
     Method, Request, Response,
 };
-use socks5_impl::protocol::Address;
+use socks5_impl::protocol::{Address, UserKey};
 use std::net::SocketAddr;
 use tokio::{net::TcpListener, sync::mpsc::Receiver};
 
@@ -75,6 +75,7 @@ async fn proxy(
 
     let server = config.server_addr;
     let credentials = config.get_credentials();
+    let s5_auth = config.get_socks5_credentials();
 
     fn get_proxy_authorization(req: &Request<hyper::body::Incoming>) -> (Option<HeaderName>, Option<&HeaderValue>) {
         if let Some(header) = req.headers().get(AUTHORIZATION) {
@@ -108,7 +109,7 @@ async fn proxy(
             tokio::task::spawn(async move {
                 match hyper::upgrade::on(req).await {
                     Ok(upgraded) => {
-                        if let Err(e) = tunnel(upgraded, s5addr, server).await {
+                        if let Err(e) = tunnel(upgraded, s5addr, server, s5_auth).await {
                             log::error!("server io error: {}", e);
                         };
                     }
@@ -129,7 +130,7 @@ async fn proxy(
 
         log::debug!("destination address {}", s5addr);
         log::debug!("connect to SOCKS5 proxy server {:?}", server);
-        let stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &s5addr, None).await?;
+        let stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &s5addr, s5_auth).await?;
         let io = TokioIo::new(stream);
         let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
             .preserve_header_case(true)
@@ -157,9 +158,9 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
 
 // Create a TCP connection to host:port, build a tunnel between the connection and
 // the upgraded connection
-async fn tunnel(upgraded: Upgraded, dst: Address, server: SocketAddr) -> std::io::Result<()> {
+async fn tunnel(upgraded: Upgraded, dst: Address, server: SocketAddr, auth: Option<UserKey>) -> std::io::Result<()> {
     let mut upgraded = TokioIo::new(upgraded);
-    let mut server = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, None).await?;
+    let mut server = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, auth).await?;
     let (from_client, from_server) = tokio::io::copy_bidirectional(&mut upgraded, &mut server).await?;
     log::debug!("client wrote {} bytes and received {} bytes", from_client, from_server);
     Ok(())
