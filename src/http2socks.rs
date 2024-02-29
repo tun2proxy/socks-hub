@@ -86,6 +86,20 @@ async fn proxy(
         }
     }
 
+    let (auth_header, auth_value) = get_proxy_authorization(&req);
+    // Sometimes the CONNECT method will missing the authorization header, I think it's a bug of the browser.
+    if Method::CONNECT != req.method() || auth_header.is_some() {
+        if !verify_basic_authorization(&credentials, auth_value) {
+            log::error!("authorization fail");
+            let mut resp = Response::new(empty());
+            *resp.status_mut() = hyper::StatusCode::UNAUTHORIZED;
+            return Ok(resp);
+        }
+        if let Some(auth_header) = auth_header {
+            let _ = req.headers_mut().remove(auth_header);
+        }
+    }
+
     if Method::CONNECT == req.method() {
         if let Some(host) = req.uri().host() {
             let port = req.uri().port_u16().unwrap_or(80);
@@ -109,17 +123,6 @@ async fn proxy(
             Ok(resp)
         }
     } else {
-        let (auth_header, auth_value) = get_proxy_authorization(&req);
-        if !verify_basic_authorization(&credentials, auth_value) {
-            log::error!("authorization fail");
-            let mut resp = Response::new(empty());
-            *resp.status_mut() = hyper::StatusCode::UNAUTHORIZED;
-            return Ok(resp);
-        }
-        if let Some(auth_header) = auth_header {
-            let _ = req.headers_mut().remove(auth_header);
-        }
-
         let host = req.uri().host().unwrap_or_default();
         let port = req.uri().port_u16().unwrap_or(80);
         let s5addr = Address::from((host, port));
