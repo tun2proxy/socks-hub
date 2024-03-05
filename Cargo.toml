@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "lib"]
 
 [dependencies]
 as-any = "0.3"
-base64 = "0.21"
+base64 = "0.22"
 bytes = "1.5"
 chrono = "0.4"
 clap = { version = "4.5", features = ["derive"] }
