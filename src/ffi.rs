@@ -60,7 +60,7 @@ pub unsafe extern "C" fn socks_hub_run(
     config
         .source_type(source_type)
         .verbosity(verbosity)
-        .local_addr(local_addr)
+        .listen_addr(local_addr)
         .server_addr(server_addr);
 
     crate::api::api_internal_run(config, Some(cb))

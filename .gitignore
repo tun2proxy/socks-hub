@@ -1,3 +1,5 @@
+shadowsocks.acl
+
 socks_hub_ffi.h
 Cargo.lock
 .vscode/

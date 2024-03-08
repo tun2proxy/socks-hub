@@ -27,4 +27,6 @@ jobs:
     - name: Build
       run: cargo build --verbose --examples --tests --all-features
     - name: Test
-      run: cargo test --all-features --examples
+      run: |
+        python3 genacl_proxy_gfw_bypass_china_ip.py
+        cargo test --all-features --verbose

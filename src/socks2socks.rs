@@ -10,13 +10,24 @@ use socks5_impl::{
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{net::UdpSocket, sync::mpsc::Receiver};
 
+#[cfg(feature = "acl")]
+static ACL_CENTER: std::sync::OnceLock<Option<crate::acl::AccessControl>> = std::sync::OnceLock::new();
+
 pub(crate) static MAX_UDP_RELAY_PACKET_SIZE: usize = 1500;
 
 pub async fn main_entry<F>(config: &Config, quit: Receiver<()>, callback: Option<F>) -> Result<(), BoxError>
 where
     F: FnOnce(SocketAddr) + Send + Sync + 'static,
 {
-    let listen_addr = config.local_addr;
+    #[cfg(feature = "acl")]
+    ACL_CENTER.get_or_init(|| {
+        config
+            .acl_file
+            .as_ref()
+            .and_then(|acl_file| crate::acl::AccessControl::load_from_file(acl_file).ok())
+    });
+
+    let listen_addr = config.listen_addr;
     let server_addr = config.server_addr;
     let credentials = config.get_credentials();
     let s5_auth = config.get_s5_credentials().try_into().ok();
@@ -109,6 +120,24 @@ async fn handle_s5_client_connection(
     server: SocketAddr,
     s5_auth: Option<UserKey>,
 ) -> Result<()> {
+    #[cfg(feature = "acl")]
+    {
+        let mut must_proxied = true;
+        if let Some(Some(acl)) = ACL_CENTER.get() {
+            must_proxied = acl.check_host_in_proxy_list(&dst.domain()).unwrap_or_default();
+        }
+        if !must_proxied {
+            log::debug!("connect to destination address {:?} without proxy", dst);
+            use std::net::ToSocketAddrs;
+            let addr = dst.to_socket_addrs()?.next().ok_or(crate::std_io_error_other("no address found"))?;
+            let mut server = tokio::net::TcpStream::connect(addr).await?;
+            let mut conn = connect.reply(Reply::Succeeded, Address::unspecified()).await?;
+            log::trace!("{} -> {}", conn.peer_addr()?, dst);
+            tokio::io::copy_bidirectional(&mut server, &mut conn).await?;
+            return Ok(());
+        }
+    }
+
     let mut stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, s5_auth).await?;
     let mut conn = connect.reply(Reply::Succeeded, Address::unspecified()).await?;
     log::trace!("{} -> {}", conn.peer_addr()?, dst);

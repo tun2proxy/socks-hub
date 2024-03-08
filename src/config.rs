@@ -12,7 +12,7 @@ pub struct Config {
 
     /// Local listening address
     #[arg(short, long, value_name = "IP:port")]
-    pub local_addr: SocketAddr,
+    pub listen_addr: SocketAddr,
 
     /// Remote SOCKS5 server address
     #[arg(short, long, value_name = "IP:port")]
@@ -34,6 +34,10 @@ pub struct Config {
     #[arg(long, value_name = "password")]
     pub s5_password: Option<String>,
 
+    /// ACL file path
+    #[arg(short, long, value_name = "path")]
+    pub acl_file: Option<std::path::PathBuf>,
+
     /// Log verbosity level
     #[arg(short, long, value_name = "level", default_value = "info")]
     pub verbosity: ArgVerbosity,
@@ -41,16 +45,17 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let local_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let listen_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
         let server_addr: SocketAddr = "127.0.0.1:1080".parse().unwrap();
         Config {
             source_type: ProxyType::Http,
-            local_addr,
+            listen_addr,
             server_addr,
             username: None,
             password: None,
             s5_username: None,
             s5_password: None,
+            acl_file: None,
             verbosity: ArgVerbosity::Info,
         }
     }
@@ -62,9 +67,9 @@ impl Config {
         Self::parse()
     }
 
-    pub fn new(local_addr: SocketAddr, server_addr: SocketAddr) -> Self {
+    pub fn new(listen_addr: SocketAddr, server_addr: SocketAddr) -> Self {
         Config {
-            local_addr,
+            listen_addr,
             server_addr,
             ..Config::default()
         }
@@ -75,8 +80,8 @@ impl Config {
         self
     }
 
-    pub fn local_addr(&mut self, local_addr: SocketAddr) -> &mut Self {
-        self.local_addr = local_addr;
+    pub fn listen_addr(&mut self, listen_addr: SocketAddr) -> &mut Self {
+        self.listen_addr = listen_addr;
         self
     }
 
@@ -92,6 +97,21 @@ impl Config {
 
     pub fn password(&mut self, password: &str) -> &mut Self {
         self.password = Some(password.to_string());
+        self
+    }
+
+    pub fn s5_username(&mut self, s5_username: &str) -> &mut Self {
+        self.s5_username = Some(s5_username.to_string());
+        self
+    }
+
+    pub fn s5_password(&mut self, s5_password: &str) -> &mut Self {
+        self.s5_password = Some(s5_password.to_string());
+        self
+    }
+
+    pub fn acl_file<P: Into<std::path::PathBuf>>(&mut self, acl_file: P) -> &mut Self {
+        self.acl_file = Some(acl_file.into());
         self
     }
 
@@ -121,6 +141,15 @@ pub enum ProxyType {
     #[default]
     Http = 0,
     Socks5,
+}
+
+impl std::fmt::Display for ProxyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ProxyType::Http => write!(f, "http"),
+            ProxyType::Socks5 => write!(f, "socks5"),
+        }
+    }
 }
 
 #[repr(C)]

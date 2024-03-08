@@ -10,6 +10,8 @@ use tokiort::TokioIo;
 mod http2socks;
 mod socks2socks;
 
+#[cfg(feature = "acl")]
+pub mod acl;
 mod api;
 mod dump_logger;
 mod ffi;

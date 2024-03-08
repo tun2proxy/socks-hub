@@ -26,8 +26,8 @@ async fn main() -> Result<(), BoxError> {
     })
     .await;
 
-    let cb = |addr: SocketAddr| {
-        log::info!("Listening on {}", addr);
+    let cb = move |addr: SocketAddr| {
+        log::info!("Listening on {}://{}", config.source_type, addr);
     };
 
     main_entry(&config, quit, Some(cb)).await?;

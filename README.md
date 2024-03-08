@@ -30,19 +30,20 @@ cargo install socks-hub
 
 ## Usage
 
-```shell
-SOCKS5 hub for HTTP and SOCKS5 downstreams proxying.
+```plaintext
+SOCKS5 hub for downstreams proxy of HTTP or SOCKS5.
 
-Usage: socks-hub [OPTIONS] --local-addr <IP:port> --server-addr <IP:port>
+Usage: socks-hub [OPTIONS] --listen-addr <IP:port> --server-addr <IP:port>
 
 Options:
-  -t, --source-type <http|socks5>  Source type [default: http] [possible values: http, socks5]
-  -l, --local-addr <IP:port>       Local listening address
+  -t, --source-type <http|socks5>  Source proxy type [default: http] [possible values: http, socks5]
+  -l, --listen-addr <IP:port>      Local listening address
   -s, --server-addr <IP:port>      Remote SOCKS5 server address
   -u, --username <username>        Client authentication username, available both for HTTP and SOCKS5, optional
   -p, --password <password>        Client authentication password, available both for HTTP and SOCKS5, optional
       --s5-username <username>     SOCKS5 server authentication username, optional
       --s5-password <password>     SOCKS5 server authentication password, optional
+  -a, --acl-file <path>            ACL file path
   -v, --verbosity <level>          Log verbosity level [default: info] [possible values: off, error, warn, info, debug, trace]
   -h, --help                       Print help
   -V, --version                    Print version
