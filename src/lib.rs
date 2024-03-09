@@ -1,8 +1,22 @@
-pub mod config;
-pub use config::{ArgVerbosity, Config, Credentials, ProxyType};
+cfg_if::cfg_if! {
+    if #[cfg(feature = "base64")] {
+        mod base64_wrapper;
+        pub use base64_wrapper::{base64_decode, base64_encode, Base64Engine};
+    }
+}
 
-pub mod base64_wrapper;
-pub use base64_wrapper::{base64_decode, base64_encode, Base64Engine};
+cfg_if::cfg_if! {
+    if #[cfg(feature = "acl")] {
+        mod acl;
+        pub use acl::AccessControl;
+    }
+}
+
+cfg_if::cfg_if! {
+    if #[cfg(feature = "sockshub")] {
+
+mod config;
+pub use config::{ArgVerbosity, Config, Credentials, ProxyType};
 
 mod tokiort;
 use tokiort::TokioIo;
@@ -10,8 +24,6 @@ use tokiort::TokioIo;
 mod http2socks;
 mod socks2socks;
 
-#[cfg(feature = "acl")]
-pub mod acl;
 mod api;
 mod dump_logger;
 mod ffi;
@@ -53,4 +65,7 @@ pub(crate) async fn create_s5_connect<A: ToSocketAddrs>(
 
 pub(crate) fn std_io_error_other<E: Into<BoxError>>(err: E) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, err)
+}
+
+    }
 }
