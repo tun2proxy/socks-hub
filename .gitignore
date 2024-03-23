@@ -1,5 +1,5 @@
 shadowsocks.acl
-
+*.xcframework/
 socks_hub_ffi.h
 Cargo.lock
 .vscode/

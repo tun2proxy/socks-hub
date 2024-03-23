@@ -39,7 +39,7 @@ where
 }
 
 pub(crate) fn api_internal_stop() -> c_int {
-    let res = match unsafe { &TUN_QUIT } {
+    let res = match unsafe { TUN_QUIT.take() } {
         None => {
             log::error!("socks-hub not started");
             -1
@@ -58,6 +58,5 @@ pub(crate) fn api_internal_stop() -> c_int {
             },
         },
     };
-    unsafe { TUN_QUIT = None };
     res
 }

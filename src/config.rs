@@ -14,10 +14,6 @@ pub struct Config {
     #[arg(short, long, value_name = "IP:port")]
     pub listen_addr: SocketAddr,
 
-    /// Remote SOCKS5 server address
-    #[arg(short, long, value_name = "IP:port")]
-    pub server_addr: SocketAddr,
-
     /// Client authentication username, available both for HTTP and SOCKS5, optional
     #[arg(short, long, value_name = "username")]
     pub username: Option<String>,
@@ -26,15 +22,19 @@ pub struct Config {
     #[arg(short, long, value_name = "password")]
     pub password: Option<String>,
 
-    /// SOCKS5 server authentication username, optional
+    /// Remote SOCKS5 server address
+    #[arg(short, long, value_name = "IP:port")]
+    pub server_addr: SocketAddr,
+
+    /// Remote SOCKS5 server authentication username, optional
     #[arg(long, value_name = "username")]
     pub s5_username: Option<String>,
 
-    /// SOCKS5 server authentication password, optional
+    /// Remote SOCKS5 server authentication password, optional
     #[arg(long, value_name = "password")]
     pub s5_password: Option<String>,
 
-    /// ACL file path
+    /// ACL (Access Control List) file path, optional
     #[arg(short, long, value_name = "path")]
     pub acl_file: Option<std::path::PathBuf>,
 
