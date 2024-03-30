@@ -25,7 +25,7 @@ echo "Generating includes..."
 mkdir -p target/include/
 rm -rf target/include/*
 cbindgen --config cbindgen.toml -l C -o target/include/socks-hub.h
-cat > target/include/module.modulemap <<EOF
+cat > target/include/socks-hub.modulemap <<EOF
 framework module socks-hub {
     umbrella header "socks-hub.h"
 

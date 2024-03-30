@@ -39,7 +39,9 @@ pub unsafe extern "C" fn socks_hub_run(
     ctx: *mut c_void,
 ) -> c_int {
     log::set_max_level(verbosity.into());
-    log::set_boxed_logger(Box::<crate::dump_logger::DumpLogger>::default()).unwrap();
+    if let Err(err) = log::set_boxed_logger(Box::<crate::dump_logger::DumpLogger>::default()) {
+        log::error!("Failed to set logger: {}", err);
+    }
 
     let local_addr = std::ffi::CStr::from_ptr(local_addr).to_str().unwrap();
     let local_addr = local_addr.parse().unwrap();

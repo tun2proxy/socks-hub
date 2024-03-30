@@ -69,6 +69,8 @@ jobs:
           elif [[ "${{ matrix.host_os }}" == "macos-latest" ]]; then
             zip -j mypubdir4/socks-hub-${{ matrix.target }}.zip target/${{ matrix.target }}/release/socks-hub ./README.md ./socks_hub_ffi.h target/${{ matrix.target }}/release/libsocks_hub.dylib
             if [[ "${{ matrix.target }}" == "x86_64-apple-darwin" ]]; then
+              ./build-aarch64-apple-ios.sh
+              zip -r mypubdir4/socks-hub-aarch64-apple-ios-xcframework.zip ./socks-hub.xcframework/
               ./build-apple.sh
               zip -r mypubdir4/socks-hub-apple-xcframework.zip ./socks-hub.xcframework/
             fi
