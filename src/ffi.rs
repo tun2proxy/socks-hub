@@ -40,7 +40,7 @@ pub unsafe extern "C" fn socks_hub_run(
 ) -> c_int {
     log::set_max_level(verbosity.into());
     if let Err(err) = log::set_boxed_logger(Box::<crate::dump_logger::DumpLogger>::default()) {
-        log::error!("Failed to set logger: {}", err);
+        log::warn!("Failed to set logger: {}", err);
     }
 
     let local_addr = std::ffi::CStr::from_ptr(local_addr).to_str().unwrap();
