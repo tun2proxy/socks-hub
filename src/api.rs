@@ -1,13 +1,13 @@
 use crate::Config;
-use std::{net::SocketAddr, os::raw::c_int, sync::Arc};
+use std::{net::SocketAddr, os::raw::c_int, sync::LazyLock, sync::Mutex};
 
-static mut TUN_QUIT: Option<Arc<tokio::sync::mpsc::Sender<()>>> = None;
+static TUN_QUIT: LazyLock<Mutex<Option<tokio::sync::mpsc::Sender<()>>>> = LazyLock::new(|| Mutex::new(None));
 
 pub(crate) fn api_internal_run<F>(config: Config, callback: Option<F>) -> c_int
 where
     F: FnOnce(SocketAddr) + Send + Sync + 'static,
 {
-    if unsafe { TUN_QUIT.is_some() } {
+    if TUN_QUIT.lock().unwrap().is_some() {
         log::error!("socks-hub already started");
         return -1;
     }
@@ -17,7 +17,7 @@ where
 
         let (tx, quit) = tokio::sync::mpsc::channel::<()>(1);
 
-        unsafe { TUN_QUIT = Some(Arc::new(tx)) };
+        TUN_QUIT.lock().unwrap().replace(tx);
 
         crate::main_entry(&config, quit, callback).await?;
         Ok::<_, crate::BoxError>(())
@@ -39,7 +39,7 @@ where
 }
 
 pub(crate) fn api_internal_stop() -> c_int {
-    let res = match unsafe { TUN_QUIT.take() } {
+    let res = match TUN_QUIT.lock().unwrap().take() {
         None => {
             log::error!("socks-hub not started");
             -1
