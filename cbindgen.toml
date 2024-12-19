@@ -1,4 +1,5 @@
 language = "C"
+cpp_compat = true
 
 [export]
 include = ["socks_hub_run", "socks_hub_set_log_callback", "socks_hub_stop"]
