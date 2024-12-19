@@ -16,8 +16,8 @@ cfg_if::cfg_if! {
 // can't use cfg_if here, because it will cause cbindgen to can't generate ffi.h correctly.
 // see this issue: https://github.com/mozilla/cbindgen/issues/935
 //
-// cfg_if::cfg_if! {
-//     if #[cfg(feature = "sockshub")] {
+cfg_if::cfg_if! {
+    if #[cfg(feature = "sockshub")] {
 
 #[cfg(feature = "sockshub")]
 mod config;
@@ -89,5 +89,5 @@ pub(crate) fn std_io_error_other<E: Into<BoxError>>(err: E) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, err)
 }
 
-//     }
-// }
+    }
+}
