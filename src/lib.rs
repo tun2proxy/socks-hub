@@ -47,20 +47,9 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T, E = BoxError> = std::result::Result<T, E>;
 
 #[cfg(feature = "sockshub")]
-use socks5_impl::protocol::{Address, UserKey};
-#[cfg(feature = "sockshub")]
-use std::{net::SocketAddr, time::Duration};
-#[cfg(feature = "sockshub")]
-use tokio::{
-    net::{TcpStream, ToSocketAddrs},
-    sync::mpsc::Receiver,
-    time::timeout,
-};
-
-#[cfg(feature = "sockshub")]
-pub async fn main_entry<F>(config: &Config, quit: Receiver<()>, callback: Option<F>) -> Result<(), BoxError>
+pub async fn main_entry<F>(config: &Config, quit: tokio::sync::mpsc::Receiver<()>, callback: Option<F>) -> Result<(), BoxError>
 where
-    F: FnOnce(SocketAddr) + Send + Sync + 'static,
+    F: FnOnce(std::net::SocketAddr) + Send + Sync + 'static,
 {
     match config.source_type {
         ProxyType::Http => http2socks::main_entry(config, quit, callback).await,
@@ -69,16 +58,16 @@ where
 }
 
 #[cfg(feature = "sockshub")]
-pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[cfg(feature = "sockshub")]
-pub(crate) async fn create_s5_connect<A: ToSocketAddrs>(
+pub(crate) async fn create_s5_connect<A: tokio::net::ToSocketAddrs>(
     server: A,
-    dur: Duration,
-    dst: &Address,
-    auth: Option<UserKey>,
-) -> std::io::Result<tokio::io::BufStream<TcpStream>> {
-    let stream = timeout(dur, TcpStream::connect(server)).await??;
+    dur: std::time::Duration,
+    dst: &socks5_impl::protocol::Address,
+    auth: Option<socks5_impl::protocol::UserKey>,
+) -> std::io::Result<tokio::io::BufStream<tokio::net::TcpStream>> {
+    let stream = tokio::time::timeout(dur, tokio::net::TcpStream::connect(server)).await??;
     let mut stream = tokio::io::BufStream::new(stream);
     socks5_impl::client::connect(&mut stream, dst, auth).await?;
     Ok(stream)
