@@ -1,6 +1,6 @@
 #![cfg(not(target_os = "android"))]
 
-use crate::{ArgVerbosity, Config, ProxyType};
+use crate::{ArgVerbosity, Config};
 use std::{
     net::SocketAddr,
     os::raw::{c_char, c_int, c_void},
@@ -22,18 +22,19 @@ unsafe impl Sync for CCallback {}
 
 /// # Safety
 ///
-/// Run the socks-hub component with some arguments, this function will block the current thread until the `socks_hub_stop` function is called in another thread.
-/// The `source_type` argument is the source type, which is an integer from 0 to 1, where 0 means HTTP and 1 means SOCKS5.
-/// The `local_addr` argument is the local listening address, which is a string in the format of "IP:port".
-/// The `server_addr` argument is the remote SOCKS5 server address, which is a string in the format of "IP:port".
-/// The `verbosity` argument is the verbosity level, which is an integer from 0 to 5, where 0 means off, 1 means error, 2 means warn, 3 means info, 4 means debug, and 5 means trace.
-/// The `callback` argument is a function pointer, which is an optional callback function that will be called when the server is listening on the local address.
-/// The `ctx` argument is a pointer to the context, which is an optional pointer that will be passed to the callback function.
+/// Run the socks-hub component with some arguments, this function will block the current thread
+/// until the `socks_hub_stop` function is called in another thread.
+/// - `listen_proxy_role`: The local listen address and the proxy role, which is a string in the format of
+///   "http://username:password@127.0.0.1:8080" or "socks5://[username[:password]@]host:port".
+/// - `remote_server`: The remote SOCKS5 server address, which is a string in the format of "socks5://[username[:password]@]host:port".
+/// - `verbosity`: The verbosity level, which is an integer from 0 to 5,
+///   where 0 means off, 1 means error, 2 means warn, 3 means info, 4 means debug, and 5 means trace.
+/// - `callback`: A function pointer, which is an optional callback function that will be called when the server is listening on the local address.
+/// - `ctx`: A pointer to the context, which is an optional pointer that will be passed to the callback function.
 #[no_mangle]
 pub unsafe extern "C" fn socks_hub_run(
-    source_type: ProxyType,
-    local_addr: *const c_char,
-    server_addr: *const c_char,
+    listen_proxy_role: *const c_char,
+    remote_server: *const c_char,
     verbosity: ArgVerbosity,
     callback: Option<unsafe extern "C" fn(c_int, *mut c_void)>,
     ctx: *mut c_void,
@@ -43,11 +44,9 @@ pub unsafe extern "C" fn socks_hub_run(
         log::warn!("Failed to set logger: {}", err);
     }
 
-    let local_addr = std::ffi::CStr::from_ptr(local_addr).to_str().unwrap();
-    let local_addr = local_addr.parse().unwrap();
+    let listen_proxy_role = std::ffi::CStr::from_ptr(listen_proxy_role).to_str().unwrap();
 
-    let server_addr = std::ffi::CStr::from_ptr(server_addr).to_str().unwrap();
-    let server_addr = server_addr.parse().unwrap();
+    let remote_server = std::ffi::CStr::from_ptr(remote_server).to_str().unwrap();
 
     let ccb = CCallback(callback, ctx);
     let cb = |addr: SocketAddr| {
@@ -60,10 +59,9 @@ pub unsafe extern "C" fn socks_hub_run(
 
     let mut config = Config::default();
     config
-        .source_type(source_type)
+        .listen_proxy_role(listen_proxy_role)
         .verbosity(verbosity)
-        .listen_addr(local_addr)
-        .server_addr(server_addr);
+        .remote_server(remote_server);
 
     crate::api::api_internal_run(config, Some(cb))
 }

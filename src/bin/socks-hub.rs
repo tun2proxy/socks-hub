@@ -1,5 +1,5 @@
 //! Usage:
-//! 1. `cargo run -- -l 127.0.0.1:8080 -s 127.0.0.1:1080`
+//! 1. `cargo run -- -l http://127.0.0.1:8080 -r socks5://127.0.0.1:1080`
 //! 2. In Linux, configurate `http_proxy` in command line
 //!    $ export http_proxy=http://127.0.0.1:8080
 //!    $ export https_proxy=http://127.0.0.1:8080
@@ -26,8 +26,10 @@ async fn main() -> Result<(), BoxError> {
     })
     .await;
 
+    let mut role = config.listen_proxy_role.clone();
     let cb = move |addr: SocketAddr| {
-        log::info!("Listening on {}://{}", config.source_type, addr);
+        role.addr = addr;
+        log::info!("Listening on {}", role);
     };
 
     main_entry(&config, quit, Some(cb)).await?;

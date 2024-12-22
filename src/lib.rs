@@ -51,7 +51,10 @@ pub async fn main_entry<F>(config: &Config, quit: tokio::sync::mpsc::Receiver<()
 where
     F: FnOnce(std::net::SocketAddr) + Send + Sync + 'static,
 {
-    match config.source_type {
+    if config.remote_server.proxy_type != ProxyType::Socks5 {
+        return Err("remote server must be socks5".into());
+    }
+    match config.listen_proxy_role.proxy_type {
         ProxyType::Http => http2socks::main_entry(config, quit, callback).await,
         ProxyType::Socks5 => socks2socks::main_entry(config, quit, callback).await,
     }

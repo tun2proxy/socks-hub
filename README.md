@@ -1,7 +1,7 @@
 # socks-hub
 
 [![Crates.io](https://img.shields.io/crates/v/socks-hub.svg)](https://crates.io/crates/socks-hub)
-![socks-hub](https://docs.rs/socks-hub/badge.svg)
+[![socks-hub](https://docs.rs/socks-hub/badge.svg)](https://crates.io/crates/socks-hub)
 [![Documentation](https://img.shields.io/badge/docs-release-brightgreen.svg?style=flat)](https://docs.rs/socks-hub)
 [![Download](https://img.shields.io/crates/d/socks-hub.svg)](https://crates.io/crates/socks-hub)
 [![License](https://img.shields.io/crates/l/socks-hub.svg?style=flat)](https://github.com/ssrlive/socks-hub/blob/master/LICENSE)
@@ -34,18 +34,15 @@ cargo install socks-hub
 ```plaintext
 SOCKS5 hub for downstreams proxy of HTTP or SOCKS5.
 
-Usage: socks-hub [OPTIONS] --listen-addr <IP:port> --server-addr <IP:port>
+Usage: socks-hub.exe [OPTIONS] --listen-proxy-role <URL> --remote-server <URL>
 
 Options:
-  -t, --source-type <http|socks5>  Source proxy type [default: http] [possible values: http, socks5]
-  -l, --listen-addr <IP:port>      Local listening address
-  -u, --username <username>        Client authentication username, available both for HTTP and SOCKS5, optional
-  -p, --password <password>        Client authentication password, available both for HTTP and SOCKS5, optional
-  -s, --server-addr <IP:port>      Remote SOCKS5 server address
-      --s5-username <username>     Remote SOCKS5 server authentication username, optional
-      --s5-password <password>     Remote SOCKS5 server authentication password, optional
-  -a, --acl-file <path>            ACL (Access Control List) file path, optional
-  -v, --verbosity <level>          Log verbosity level [default: info] [possible values: off, error, warn, info, debug, trace]
-  -h, --help                       Print help
-  -V, --version                    Print version
+  -l, --listen-proxy-role <URL>  Source proxy role, URL in the form proto://[username[:password]@]host:port, where proto is one of socks5,
+                                 http. Username and password are encoded in percent encoding. For  
+                                 example: http://myname:pass%40word@127.0.0.1:1080
+  -r, --remote-server <URL>      Remote SOCKS5 server, URL in form of socks5://[username[:password]@]host:port
+  -a, --acl-file <path>          ACL (Access Control List) file path, optional
+  -v, --verbosity <level>        Log verbosity level [default: info] [possible values: off, error, warn, info, debug, trace]
+  -h, --help                     Print help
+  -V, --version                  Print version
 ```

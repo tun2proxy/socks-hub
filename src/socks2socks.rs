@@ -27,8 +27,8 @@ where
             .and_then(|acl_file| crate::acl::AccessControl::load_from_file(acl_file).ok())
     });
 
-    let listen_addr = config.listen_addr;
-    let server_addr = config.server_addr;
+    let listen_addr = config.listen_proxy_role.addr;
+    let server_addr = config.remote_server.addr;
     let credentials = config.get_credentials();
     let s5_auth = config.get_s5_credentials().try_into().ok();
     match (credentials.username, credentials.password) {

@@ -26,14 +26,14 @@ where
             .and_then(|acl_file| crate::acl::AccessControl::load_from_file(acl_file).ok())
     });
 
-    let listen_addr = config.listen_addr;
+    let listen_addr = config.listen_proxy_role.addr;
 
     let listener = TcpListener::bind(listen_addr).await?;
 
     if let Some(callback) = callback {
         callback(listener.local_addr()?);
     } else {
-        log::info!("Listening on {}://{}", config.source_type, listener.local_addr()?);
+        log::info!("Listening on {}", config.listen_proxy_role);
     }
 
     let config = std::sync::Arc::new(config.clone());
@@ -84,7 +84,7 @@ async fn proxy(
     //
     log::trace!("req: {:?}", req);
 
-    let server = config.server_addr;
+    let server = config.remote_server.addr;
     let credentials = config.get_credentials();
     let s5_auth = config.get_s5_credentials().try_into().ok();
 

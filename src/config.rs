@@ -6,33 +6,16 @@ use std::net::SocketAddr;
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize)]
 #[command(author, version, about = "SOCKS5 hub for downstreams proxy of HTTP or SOCKS5.", long_about = None)]
 pub struct Config {
-    /// Source proxy type
-    #[arg(short = 't', long, value_name = "http|socks5", default_value = "http")]
-    pub source_type: ProxyType,
+    /// Source proxy role, URL in the form proto://[username[:password]@]host:port,
+    /// where proto is one of socks5, http.
+    /// Username and password are encoded in percent encoding. For example:
+    /// http://myname:pass%40word@127.0.0.1:1080
+    #[arg(short, long, value_parser = |s: &str| ArgProxy::try_from(s), value_name = "URL")]
+    pub listen_proxy_role: ArgProxy,
 
-    /// Local listening address
-    #[arg(short, long, value_name = "IP:port")]
-    pub listen_addr: SocketAddr,
-
-    /// Client authentication username, available both for HTTP and SOCKS5, optional
-    #[arg(short, long, value_name = "username")]
-    pub username: Option<String>,
-
-    /// Client authentication password, available both for HTTP and SOCKS5, optional
-    #[arg(short, long, value_name = "password")]
-    pub password: Option<String>,
-
-    /// Remote SOCKS5 server address
-    #[arg(short, long, value_name = "IP:port")]
-    pub server_addr: SocketAddr,
-
-    /// Remote SOCKS5 server authentication username, optional
-    #[arg(long, value_name = "username")]
-    pub s5_username: Option<String>,
-
-    /// Remote SOCKS5 server authentication password, optional
-    #[arg(long, value_name = "password")]
-    pub s5_password: Option<String>,
+    /// Remote SOCKS5 server, URL in form of socks5://[username[:password]@]host:port
+    #[arg(short, long, value_parser = |s: &str| ArgProxy::try_from(s), value_name = "URL")]
+    pub remote_server: ArgProxy,
 
     /// ACL (Access Control List) file path, optional
     #[arg(short, long, value_name = "path")]
@@ -45,16 +28,10 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let listen_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        let server_addr: SocketAddr = "127.0.0.1:1080".parse().unwrap();
+        let remote_server: ArgProxy = "socks5://127.0.0.1:1080".try_into().unwrap();
         Config {
-            source_type: ProxyType::Http,
-            listen_addr,
-            server_addr,
-            username: None,
-            password: None,
-            s5_username: None,
-            s5_password: None,
+            listen_proxy_role: ArgProxy::default(),
+            remote_server,
             acl_file: None,
             verbosity: ArgVerbosity::Info,
         }
@@ -63,50 +40,24 @@ impl Default for Config {
 
 impl Config {
     pub fn parse_args() -> Self {
-        use clap::Parser;
-        Self::parse()
+        <Self as clap::Parser>::parse()
     }
 
-    pub fn new(listen_addr: SocketAddr, server_addr: SocketAddr) -> Self {
+    pub fn new(listen_proxy_role: &str, remote_server: &str) -> Self {
         Config {
-            listen_addr,
-            server_addr,
+            listen_proxy_role: listen_proxy_role.try_into().unwrap(),
+            remote_server: remote_server.try_into().unwrap(),
             ..Config::default()
         }
     }
 
-    pub fn source_type(&mut self, source_type: ProxyType) -> &mut Self {
-        self.source_type = source_type;
+    pub fn listen_proxy_role(&mut self, listen_proxy_role: &str) -> &mut Self {
+        self.listen_proxy_role = listen_proxy_role.try_into().unwrap();
         self
     }
 
-    pub fn listen_addr(&mut self, listen_addr: SocketAddr) -> &mut Self {
-        self.listen_addr = listen_addr;
-        self
-    }
-
-    pub fn server_addr(&mut self, server_addr: SocketAddr) -> &mut Self {
-        self.server_addr = server_addr;
-        self
-    }
-
-    pub fn username(&mut self, username: &str) -> &mut Self {
-        self.username = Some(username.to_string());
-        self
-    }
-
-    pub fn password(&mut self, password: &str) -> &mut Self {
-        self.password = Some(password.to_string());
-        self
-    }
-
-    pub fn s5_username(&mut self, s5_username: &str) -> &mut Self {
-        self.s5_username = Some(s5_username.to_string());
-        self
-    }
-
-    pub fn s5_password(&mut self, s5_password: &str) -> &mut Self {
-        self.s5_password = Some(s5_password.to_string());
+    pub fn remote_server(&mut self, remote_server: &str) -> &mut Self {
+        self.remote_server = remote_server.try_into().unwrap();
         self
     }
 
@@ -121,17 +72,81 @@ impl Config {
     }
 
     pub fn get_credentials(&self) -> Credentials {
-        Credentials {
-            username: self.username.clone(),
-            password: self.password.clone(),
-        }
+        self.listen_proxy_role.credentials.clone().unwrap_or_default()
     }
 
     pub fn get_s5_credentials(&self) -> Credentials {
-        Credentials {
-            username: self.s5_username.clone(),
-            password: self.s5_password.clone(),
+        self.remote_server.credentials.clone().unwrap_or_default()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ArgProxy {
+    pub proxy_type: ProxyType,
+    pub addr: SocketAddr,
+    pub credentials: Option<Credentials>,
+}
+
+impl Default for ArgProxy {
+    fn default() -> Self {
+        ArgProxy {
+            proxy_type: ProxyType::Http,
+            addr: "127.0.0.1:8080".parse().unwrap(),
+            credentials: None,
         }
+    }
+}
+
+impl std::fmt::Display for ArgProxy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let auth = match &self.credentials {
+            Some(creds) => format!("{}", creds),
+            None => "".to_owned(),
+        };
+        if auth.is_empty() {
+            write!(f, "{}://{}", &self.proxy_type, &self.addr)
+        } else {
+            write!(f, "{}://{}@{}", &self.proxy_type, auth, &self.addr)
+        }
+    }
+}
+
+impl TryFrom<&str> for ArgProxy {
+    type Error = std::io::Error;
+    fn try_from(s: &str) -> std::result::Result<Self, Self::Error> {
+        use std::io::{Error, ErrorKind::InvalidInput};
+        let e = format!("`{s}` is not a valid proxy URL");
+        let url = url::Url::parse(s).map_err(|_| Error::new(InvalidInput, e.clone()))?;
+        let e = format!("`{s}` does not contain a host");
+        let host = url.host_str().ok_or(Error::new(InvalidInput, e))?;
+
+        let e = format!("`{s}` does not contain a port");
+        let port = url.port_or_known_default().ok_or(Error::new(InvalidInput, e))?;
+
+        let e2 = format!("`{host}` does not resolve to a usable IP address");
+        use std::net::ToSocketAddrs;
+        let addr = (host, port).to_socket_addrs()?.next().ok_or(Error::new(InvalidInput, e2))?;
+
+        let credentials = if url.username() == "" && url.password().is_none() {
+            None
+        } else {
+            use percent_encoding::percent_decode;
+            let username = percent_decode(url.username().as_bytes())
+                .decode_utf8()
+                .map_err(|e| Error::new(InvalidInput, e))?;
+            let password = percent_decode(url.password().unwrap_or("").as_bytes())
+                .decode_utf8()
+                .map_err(|e| Error::new(InvalidInput, e))?;
+            Some(Credentials::new(&username, &password))
+        };
+
+        let proxy_type = url.scheme().to_ascii_lowercase().as_str().try_into()?;
+
+        Ok(ArgProxy {
+            proxy_type,
+            addr,
+            credentials,
+        })
     }
 }
 
@@ -148,6 +163,18 @@ impl std::fmt::Display for ProxyType {
         match self {
             ProxyType::Http => write!(f, "http"),
             ProxyType::Socks5 => write!(f, "socks5"),
+        }
+    }
+}
+
+impl TryFrom<&str> for ProxyType {
+    type Error = std::io::Error;
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        use std::io::{Error, ErrorKind::InvalidInput};
+        match value {
+            "http" => Ok(ProxyType::Http),
+            "socks5" => Ok(ProxyType::Socks5),
+            scheme => Err(Error::new(InvalidInput, format!("`{}` is an invalid proxy type", scheme))),
         }
     }
 }
@@ -217,15 +244,7 @@ impl Credentials {
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
-        let empty = "".to_owned();
-        let u = self.username.as_ref().unwrap_or(&empty);
-        let p = self.password.as_ref().unwrap_or(&empty);
-        match (u.is_empty(), p.is_empty()) {
-            (true, true) => b"".to_vec(),
-            (true, false) => format!(":{}", p).as_bytes().to_vec(),
-            (false, true) => format!("{}:", u).as_bytes().to_vec(),
-            (false, false) => format!("{}:{}", u, p).as_bytes().to_vec(),
-        }
+        self.to_string().as_bytes().to_vec()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -239,6 +258,21 @@ impl TryFrom<Credentials> for UserKey {
         match (creds.username, creds.password) {
             (Some(u), Some(p)) => Ok(UserKey::new(u, p)),
             _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "username and password")),
+        }
+    }
+}
+
+impl std::fmt::Display for Credentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
+        let empty = "".to_owned();
+        let u = percent_encode(self.username.as_ref().unwrap_or(&empty).as_bytes(), NON_ALPHANUMERIC).to_string();
+        let p = percent_encode(self.password.as_ref().unwrap_or(&empty).as_bytes(), NON_ALPHANUMERIC).to_string();
+        match (u.is_empty(), p.is_empty()) {
+            (true, true) => write!(f, ""),
+            (true, false) => write!(f, ":{}", p),
+            (false, true) => write!(f, "{}:", u),
+            (false, false) => write!(f, "{}:{}", u, p),
         }
     }
 }
