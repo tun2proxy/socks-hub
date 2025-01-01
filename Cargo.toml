@@ -29,9 +29,8 @@ acl = [
     "tokio",
     "log",
 ]
-base64 = ["dep:base64"]
 sockshub = [
-    "base64",
+    "base64easy",
     "socks5-impl",
     "tokio",
     "ctrlc2",
@@ -54,7 +53,7 @@ sockshub = [
 
 [dependencies]
 as-any = { version = "0.3", optional = true }
-base64 = { version = "0.22", optional = true }
+base64easy = { version = "0.1", optional = true }
 bytes = { version = "1.6", optional = true }
 cfg-if = "1.0"
 chrono = { version = "0.4", optional = true }

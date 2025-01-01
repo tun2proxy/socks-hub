@@ -1,11 +1,4 @@
 cfg_if::cfg_if! {
-    if #[cfg(feature = "base64")] {
-        mod base64_wrapper;
-        pub use base64_wrapper::{base64_decode, base64_encode, Base64Engine};
-    }
-}
-
-cfg_if::cfg_if! {
     if #[cfg(feature = "acl")] {
         mod acl;
         pub use acl::AccessControl;
