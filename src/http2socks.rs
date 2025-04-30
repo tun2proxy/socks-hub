@@ -224,5 +224,5 @@ fn verify_basic_authorization(credentials: &Credentials, header_value: Option<&H
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Basic "))
         .and_then(|v| base64easy::decode(v, base64easy::EngineKind::Standard).ok())
-        .map_or(false, |v| v == credentials.to_vec())
+        .is_some_and(|v| v == credentials.to_vec())
 }

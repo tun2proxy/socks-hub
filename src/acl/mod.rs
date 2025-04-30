@@ -7,7 +7,6 @@
 
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use iprange::IpRange;
-use once_cell::sync::Lazy;
 use regex::bytes::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 pub use socks5_impl::protocol::Address;
 use std::{
@@ -185,14 +184,15 @@ impl ParsingRules {
     }
 
     fn add_regex_rule(&mut self, mut rule: String) {
-        static TREE_SET_RULE_EQUIV: Lazy<Regex> = Lazy::new(|| {
+        static TREE_SET_RULE_EQUIV: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+        let regex = TREE_SET_RULE_EQUIV.get_or_init(|| {
             RegexBuilder::new(r#"^(?:(?:\((?:\?:)?\^\|\\\.\)|(?:\^\.(?:\+|\*))?\\\.)((?:[\w-]+(?:\\\.)?)+)|\^((?:[\w-]+(?:\\\.)?)+))\$?$"#)
                 .unicode(false)
                 .build()
                 .unwrap()
         });
 
-        if let Some(caps) = TREE_SET_RULE_EQUIV.captures(rule.as_bytes()) {
+        if let Some(caps) = regex.captures(rule.as_bytes()) {
             if let Some(tree_rule) = caps.get(1) {
                 if let Ok(tree_rule) = str::from_utf8(tree_rule.as_bytes()) {
                     let tree_rule = tree_rule.replace("\\.", ".");
@@ -611,7 +611,7 @@ fn test_acl() {
     assert!(!acl.is_host_empty());
 
     assert!(acl.check_host_in_proxy_list("www.google.com").unwrap());
-    assert!(!acl.check_host_in_proxy_list("www.bing.com").unwrap_or_default());
+    assert!(!acl.check_host_in_proxy_list("www.baidu.com").unwrap_or_default());
     assert!(acl.check_host_in_proxy_list("sex.com").unwrap());
     assert!(acl.check_host_in_proxy_list("pornhub.com").unwrap_or_default());
     assert!(!acl.check_host_in_proxy_list("example.com").unwrap_or_default());

@@ -89,8 +89,8 @@ where
 {
     let (conn, res) = conn.authenticate().await?;
 
-    use as_any::AsAny;
-    if let Some(res) = res.as_any().downcast_ref::<std::io::Result<bool>>() {
+    let res = &res as &dyn std::any::Any;
+    if let Some(res) = res.downcast_ref::<std::io::Result<bool>>() {
         let res = *res.as_ref().map_err(|err| err.to_string())?;
         if !res {
             log::info!("authentication failed");
