@@ -24,6 +24,7 @@ sockshub = [
     "base64easy",
     "socks5-impl",
     "tokio",
+    "tokio-util",
     "ctrlc2",
     "env_logger",
     "serde",
@@ -49,7 +50,7 @@ chrono = { version = "0.4", optional = true }
 clap = { version = "4", features = ["derive", "wrap_help"], optional = true }
 ctrlc2 = { version = "3.5", features = [
     "termination",
-    "tokio",
+    "async",
 ], optional = true }
 dotenvy = { version = "0.15", optional = true }
 env_logger = { version = "0.11", optional = true }
@@ -70,4 +71,5 @@ socks5-impl = { version = "0.7", default-features = false, features = [
     "server",
 ], optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
+tokio-util = { version = "0.7", optional = true }
 url = { version = "2", optional = true }

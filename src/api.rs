@@ -1,7 +1,7 @@
 use crate::Config;
 use std::{net::SocketAddr, os::raw::c_int, sync::LazyLock, sync::Mutex};
 
-static TUN_QUIT: LazyLock<Mutex<Option<tokio::sync::mpsc::Sender<()>>>> = LazyLock::new(|| Mutex::new(None));
+static TUN_QUIT: LazyLock<Mutex<Option<tokio_util::sync::CancellationToken>>> = LazyLock::new(|| Mutex::new(None));
 
 pub(crate) fn api_internal_run<F>(config: Config, callback: Option<F>) -> c_int
 where
@@ -15,11 +15,11 @@ where
     let block = async move {
         log::info!("config: {}", serde_json::to_string_pretty(&config)?);
 
-        let (tx, quit) = tokio::sync::mpsc::channel::<()>(1);
+        let cancel_token = tokio_util::sync::CancellationToken::new();
 
-        TUN_QUIT.lock().unwrap().replace(tx);
+        TUN_QUIT.lock().unwrap().replace(cancel_token.clone());
 
-        crate::main_entry(&config, quit, callback).await?;
+        crate::main_entry(&config, cancel_token, callback).await?;
         Ok::<_, crate::BoxError>(())
     };
 
@@ -44,19 +44,10 @@ pub(crate) fn api_internal_stop() -> c_int {
             log::error!("socks-hub not started");
             -1
         }
-        Some(tun_quit) => match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
-            Err(_err) => {
-                log::error!("failed to create tokio runtime with error: {:?}", _err);
-                -2
-            }
-            Ok(rt) => match rt.block_on(async move { tun_quit.send(()).await }) {
-                Ok(_) => 0,
-                Err(_err) => {
-                    log::error!("failed to stop socks-hub with error: {:?}", _err);
-                    -3
-                }
-            },
-        },
+        Some(tun_quit) => {
+            tun_quit.cancel();
+            0
+        }
     };
     res
 }

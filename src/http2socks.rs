@@ -9,12 +9,12 @@ use hyper::{
 };
 use socks5_impl::protocol::{Address, UserKey};
 use std::net::SocketAddr;
-use tokio::{net::TcpListener, sync::mpsc::Receiver};
+use tokio::net::TcpListener;
 
 #[cfg(feature = "acl")]
 static ACL_CENTER: std::sync::OnceLock<Option<crate::acl::AccessControl>> = std::sync::OnceLock::new();
 
-pub async fn main_entry<F>(config: &Config, mut quit: Receiver<()>, callback: Option<F>) -> Result<(), BoxError>
+pub async fn main_entry<F>(config: &Config, cancel_token: tokio_util::sync::CancellationToken, callback: Option<F>) -> Result<(), BoxError>
 where
     F: FnOnce(SocketAddr) + Send + Sync + 'static,
 {
@@ -41,7 +41,7 @@ where
     loop {
         let config = config.clone();
         tokio::select! {
-            _ = quit.recv() => {
+            _ = cancel_token.cancelled() => {
                 log::info!("quit signal received");
                 break;
             }

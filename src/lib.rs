@@ -40,7 +40,7 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T, E = BoxError> = std::result::Result<T, E>;
 
 #[cfg(feature = "sockshub")]
-pub async fn main_entry<F>(config: &Config, quit: tokio::sync::mpsc::Receiver<()>, callback: Option<F>) -> Result<(), BoxError>
+pub async fn main_entry<F>(config: &Config, cancel_token: tokio_util::sync::CancellationToken, callback: Option<F>) -> Result<(), BoxError>
 where
     F: FnOnce(std::net::SocketAddr) + Send + Sync + 'static,
 {
@@ -48,8 +48,8 @@ where
         return Err("remote server must be socks5".into());
     }
     match config.listen_proxy_role.proxy_type {
-        ProxyType::Http => http2socks::main_entry(config, quit, callback).await,
-        ProxyType::Socks5 => socks2socks::main_entry(config, quit, callback).await,
+        ProxyType::Http => http2socks::main_entry(config, cancel_token, callback).await,
+        ProxyType::Socks5 => socks2socks::main_entry(config, cancel_token, callback).await,
     }
 }
 

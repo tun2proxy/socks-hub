@@ -20,11 +20,12 @@ async fn main() -> Result<(), BoxError> {
 
     log::info!("config: {}", serde_json::to_string_pretty(&config)?);
 
-    let (tx, quit) = tokio::sync::mpsc::channel::<()>(1);
-    ctrlc2::set_async_handler(async move {
-        tx.send(()).await.unwrap();
-    })
-    .await;
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    let cancel_token_clone = cancel_token.clone();
+    let handle = ctrlc2::AsyncCtrlC::new(move || {
+        cancel_token_clone.cancel();
+        true
+    })?;
 
     let mut role = config.listen_proxy_role.clone();
     let cb = move |addr: SocketAddr| {
@@ -32,6 +33,7 @@ async fn main() -> Result<(), BoxError> {
         log::info!("Listening on {}", role);
     };
 
-    main_entry(&config, quit, Some(cb)).await?;
+    main_entry(&config, cancel_token, Some(cb)).await?;
+    handle.await?;
     Ok(())
 }
