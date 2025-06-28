@@ -100,7 +100,7 @@ impl Default for ArgProxy {
 impl std::fmt::Display for ArgProxy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let auth = match &self.credentials {
-            Some(creds) => format!("{}", creds),
+            Some(creds) => format!("{creds}"),
             None => "".to_owned(),
         };
         if auth.is_empty() {
@@ -174,7 +174,7 @@ impl TryFrom<&str> for ProxyType {
         match value {
             "http" => Ok(ProxyType::Http),
             "socks5" => Ok(ProxyType::Socks5),
-            scheme => Err(Error::new(InvalidInput, format!("`{}` is an invalid proxy type", scheme))),
+            scheme => Err(Error::new(InvalidInput, format!("`{scheme}` is an invalid proxy type"))),
         }
     }
 }
@@ -264,15 +264,15 @@ impl TryFrom<Credentials> for UserKey {
 
 impl std::fmt::Display for Credentials {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use percent_encoding::{percent_encode, NON_ALPHANUMERIC};
+        use percent_encoding::{NON_ALPHANUMERIC, percent_encode};
         let empty = "".to_owned();
         let u = percent_encode(self.username.as_ref().unwrap_or(&empty).as_bytes(), NON_ALPHANUMERIC).to_string();
         let p = percent_encode(self.password.as_ref().unwrap_or(&empty).as_bytes(), NON_ALPHANUMERIC).to_string();
         match (u.is_empty(), p.is_empty()) {
             (true, true) => write!(f, ""),
-            (true, false) => write!(f, ":{}", p),
-            (false, true) => write!(f, "{}:", u),
-            (false, false) => write!(f, "{}:{}", u, p),
+            (true, false) => write!(f, ":{p}"),
+            (false, true) => write!(f, "{u}:"),
+            (false, false) => write!(f, "{u}:{p}"),
         }
     }
 }

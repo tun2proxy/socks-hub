@@ -1,10 +1,9 @@
-use crate::{BoxError, Config, Result, CONNECT_TIMEOUT};
+use crate::{BoxError, CONNECT_TIMEOUT, Config, Result};
 use socks5_impl::{
     protocol::{Address, Reply, UdpHeader, UserKey},
     server::{
-        auth,
+        AssociatedUdpSocket, ClientConnection, Connect, IncomingConnection, Server, UdpAssociate, auth,
         connection::{associate, connect},
-        AssociatedUdpSocket, ClientConnection, Connect, IncomingConnection, Server, UdpAssociate,
     },
 };
 use std::{net::SocketAddr, sync::Arc};
@@ -127,7 +126,7 @@ async fn handle_s5_client_connection(
             must_proxied = acl.check_host_in_proxy_list(&dst.domain()).unwrap_or_default();
         }
         if !must_proxied {
-            log::debug!("connect to destination address {:?} without proxy", dst);
+            log::debug!("connect to destination address {dst:?} without proxy");
             use std::net::ToSocketAddrs;
             let addr = dst.to_socket_addrs()?.next().ok_or(crate::std_io_error_other("no address found"))?;
             let mut server = tokio::net::TcpStream::connect(addr).await?;
@@ -210,7 +209,7 @@ pub(crate) async fn handle_s5_upd_associate(
                 }
             },
             _ = reply_listener.wait_until_closed() => {
-                log::trace!("[UDP] {} listener closed", listen_addr);
+                log::trace!("[UDP] {listen_addr} listener closed");
                 break Ok::<_, BoxError>(());
             },
         };

@@ -14,7 +14,7 @@ use std::{
     collections::HashSet,
     fmt,
     fs::File,
-    io::{self, BufRead, BufReader, Error, ErrorKind},
+    io::{self, BufRead, BufReader, Error},
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     str,
@@ -179,7 +179,7 @@ impl ParsingRules {
 
     fn add_ipv6_rule(&mut self, rule: impl Into<Ipv6Net>) {
         let rule = rule.into();
-        log::trace!("IPV6-RULE {}", rule);
+        log::trace!("IPV6-RULE {rule}");
         self.ipv6.add(rule);
     }
 
@@ -223,7 +223,7 @@ impl ParsingRules {
 
     #[inline]
     fn add_set_rule(&mut self, rule: &str) -> io::Result<()> {
-        log::trace!("SET-RULE {}", rule);
+        log::trace!("SET-RULE {rule}");
         self.add_set_rule_inner(rule)
     }
 
@@ -234,7 +234,7 @@ impl ParsingRules {
 
     #[inline]
     fn add_tree_rule(&mut self, rule: &str) -> io::Result<()> {
-        log::trace!("TREE-RULE {}", rule);
+        log::trace!("TREE-RULE {rule}");
         self.add_tree_rule_inner(rule)
     }
 
@@ -249,10 +249,10 @@ impl ParsingRules {
             // Remove the last `.` of FQDN
             Ok(str.trim_end_matches('.'))
         } else {
-            Err(Error::new(
-                ErrorKind::Other,
-                format!("{} parsing error: Unicode not allowed here `{}`", self.name, str),
-            ))
+            Err(Error::other(format!(
+                "{} parsing error: Unicode not allowed here `{str}`",
+                self.name
+            )))
         }
     }
 
@@ -262,7 +262,7 @@ impl ParsingRules {
             .size_limit(REGEX_SIZE_LIMIT)
             .unicode(false)
             .build()
-            .map_err(|err| Error::new(ErrorKind::Other, format!("{name} regex error: {err}")))
+            .map_err(|err| Error::other(format!("{name} regex error: {err}")))
     }
 
     fn into_rules(self) -> io::Result<Rules> {
@@ -352,7 +352,7 @@ impl AccessControl {
         let mut proxy = ParsingRules::new("[white_list] or [proxy_list]");
         let mut curr = &mut bypass;
 
-        log::trace!("ACL parsing start from mode {:?} and black_list / bypass_list", mode);
+        log::trace!("ACL parsing start from mode {mode:?} and black_list / bypass_list");
 
         for line in r.lines() {
             let line = line?;
@@ -368,7 +368,7 @@ impl AccessControl {
             let line = line.trim();
 
             if !line.is_ascii() {
-                log::warn!("ACL rule {} containing non-ASCII characters, skipped", line);
+                log::warn!("ACL rule {line} containing non-ASCII characters, skipped");
                 continue;
             }
 
@@ -385,11 +385,11 @@ impl AccessControl {
             match line {
                 "[reject_all]" | "[bypass_all]" => {
                     mode = Mode::WhiteList;
-                    log::trace!("switch to mode {:?}", mode);
+                    log::trace!("switch to mode {mode:?}");
                 }
                 "[accept_all]" | "[proxy_all]" => {
                     mode = Mode::BlackList;
-                    log::trace!("switch to mode {:?}", mode);
+                    log::trace!("switch to mode {mode:?}");
                 }
                 "[outbound_block_list]" => {
                     curr = &mut outbound_block;
@@ -588,15 +588,15 @@ async fn dns_resolve(domain: &str, port: u16) -> std::io::Result<Vec<std::net::S
 #[tokio::test]
 async fn test_dns_resolve() {
     let addrs = dns_resolve("baidu.com", 80).await.unwrap();
-    println!("Resolved addresses: {:?}", addrs);
+    println!("Resolved addresses: {addrs:?}");
     assert!(!addrs.is_empty());
 
     let addrs = dns_resolve("localhost", 80).await.unwrap();
-    println!("Resolved addresses: {:?}", addrs);
+    println!("Resolved addresses: {addrs:?}");
     assert!(!addrs.is_empty());
 
     let addrs = dns_resolve("123.45.67.89", 65535).await.unwrap();
-    println!("Resolved addresses: {:?}", addrs);
+    println!("Resolved addresses: {addrs:?}");
     assert!(!addrs.is_empty());
 
     let addrs = dns_resolve("xxxxsasasasd", 65535).await;

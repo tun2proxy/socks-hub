@@ -6,7 +6,7 @@
 //! 3. send requests
 //!    $ curl -i https://www.google.com/
 
-use socks_hub::{main_entry, BoxError, Config};
+use socks_hub::{BoxError, Config, main_entry};
 use std::net::SocketAddr;
 
 #[tokio::main]
@@ -30,7 +30,7 @@ async fn main() -> Result<(), BoxError> {
     let mut role = config.listen_proxy_role.clone();
     let cb = move |addr: SocketAddr| {
         role.addr = addr;
-        log::info!("Listening on {}", role);
+        log::info!("Listening on {role}");
     };
 
     main_entry(&config, cancel_token, Some(cb)).await?;

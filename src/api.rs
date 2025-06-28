@@ -25,13 +25,13 @@ where
 
     match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Err(_err) => {
-            log::error!("failed to create tokio runtime with error: {:?}", _err);
+            log::error!("failed to create tokio runtime with error: {_err:?}");
             -1
         }
         Ok(rt) => match rt.block_on(block) {
             Ok(_) => 0,
             Err(_err) => {
-                log::error!("failed to run socks-hub with error: {:?}", _err);
+                log::error!("failed to run socks-hub with error: {_err:?}");
                 -2
             }
         },
@@ -39,7 +39,7 @@ where
 }
 
 pub(crate) fn api_internal_stop() -> c_int {
-    let res = match TUN_QUIT.lock().unwrap().take() {
+    match TUN_QUIT.lock().unwrap().take() {
         None => {
             log::error!("socks-hub not started");
             -1
@@ -48,6 +48,5 @@ pub(crate) fn api_internal_stop() -> c_int {
             tun_quit.cancel();
             0
         }
-    };
-    res
+    }
 }

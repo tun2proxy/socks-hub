@@ -71,7 +71,7 @@ pub(crate) async fn create_s5_connect<A: tokio::net::ToSocketAddrs>(
 
 #[cfg(feature = "sockshub")]
 pub(crate) fn std_io_error_other<E: Into<BoxError>>(err: E) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::Other, err)
+    std::io::Error::other(err)
 }
 
 //     }

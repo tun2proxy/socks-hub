@@ -1,11 +1,11 @@
-use crate::{std_io_error_other, BoxError, Config, Credentials, TokioIo, CONNECT_TIMEOUT};
+use crate::{BoxError, CONNECT_TIMEOUT, Config, Credentials, TokioIo, std_io_error_other};
 use bytes::Bytes;
-use http_body_util::{combinators::BoxBody, BodyExt};
+use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::{
-    header::{HeaderName, HeaderValue, AUTHORIZATION, PROXY_AUTHORIZATION},
+    Method, Request, Response,
+    header::{AUTHORIZATION, HeaderName, HeaderValue, PROXY_AUTHORIZATION},
     service::service_fn,
     upgrade::Upgraded,
-    Method, Request, Response,
 };
 use socks5_impl::protocol::{Address, UserKey};
 use std::net::SocketAddr;
@@ -49,7 +49,7 @@ where
                 let (stream, incoming) = result?;
                 tokio::task::spawn(async move {
                     if let Err(err) = build_http_service(stream, config).await {
-                        log::error!("http service on incoming {} error: {}", incoming, err);
+                        log::error!("http service on incoming {incoming} error: {err}");
                     }
                 });
             }
@@ -82,7 +82,7 @@ async fn proxy(
     //
     // https://github.com/hyperium/hyper/blob/90eb95f62a32981cb662b0f750027231d8a2586b/examples/http_proxy.rs#L51
     //
-    log::trace!("req: {:?}", req);
+    log::trace!("req: {req:?}");
 
     let server = config.remote_server.addr;
     let credentials = config.get_credentials();
@@ -121,10 +121,10 @@ async fn proxy(
                 match hyper::upgrade::on(req).await {
                     Ok(upgraded) => {
                         if let Err(e) = tunnel(upgraded, s5addr, server, s5_auth).await {
-                            log::error!("server io error: {}", e);
+                            log::error!("server io error: {e}");
                         };
                     }
-                    Err(e) => log::error!("upgrade error: {}", e),
+                    Err(e) => log::error!("upgrade error: {e}"),
                 }
             });
             Ok(Response::new(empty()))
@@ -139,7 +139,7 @@ async fn proxy(
         let port = req.uri().port_u16().unwrap_or(80);
         let s5addr = Address::from((host, port));
 
-        log::debug!("destination address {}", s5addr);
+        log::debug!("destination address {s5addr}");
 
         #[cfg(feature = "acl")]
         {
@@ -148,13 +148,13 @@ async fn proxy(
                 must_proxied = acl.check_host_in_proxy_list(host).unwrap_or_default();
             }
             if !must_proxied {
-                log::debug!("connect to destination address {:?} without proxy", s5addr);
+                log::debug!("connect to destination address {s5addr:?} without proxy");
                 let stream = tokio::net::TcpStream::connect((host, port)).await?;
                 return proxy_internal(stream, req).await;
             }
         }
 
-        log::debug!("connect to SOCKS5 proxy server {:?}", server);
+        log::debug!("connect to SOCKS5 proxy server {server:?}");
         let stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &s5addr, s5_auth).await?;
         proxy_internal(stream, req).await
     }
@@ -173,7 +173,7 @@ where
         .map_err(std_io_error_other)?;
     tokio::task::spawn(async move {
         if let Err(err) = conn.await {
-            log::error!("Connection failed: {:?}", err);
+            log::error!("Connection failed: {err:?}");
         }
     });
     let resp = sender.send_request(req).await.map_err(std_io_error_other)?;
@@ -198,13 +198,13 @@ async fn tunnel(upgraded: Upgraded, dst: Address, server: SocketAddr, auth: Opti
             must_proxied = acl.check_host_in_proxy_list(&dst.domain()).unwrap_or_default();
         }
         if !must_proxied {
-            log::debug!("connect to destination address {:?} without proxy", dst);
+            log::debug!("connect to destination address {dst:?} without proxy");
             let mut upgraded = TokioIo::new(upgraded);
             use std::net::ToSocketAddrs;
             let addr = dst.to_socket_addrs()?.next().ok_or(std_io_error_other("no address found"))?;
             let mut server = tokio::net::TcpStream::connect(addr).await?;
             let (from_client, from_server) = tokio::io::copy_bidirectional(&mut upgraded, &mut server).await?;
-            log::debug!("client wrote {} bytes and received {} bytes", from_client, from_server);
+            log::debug!("client wrote {from_client} bytes and received {from_server} bytes");
             return Ok(());
         }
     }
@@ -212,7 +212,7 @@ async fn tunnel(upgraded: Upgraded, dst: Address, server: SocketAddr, auth: Opti
     let mut upgraded = TokioIo::new(upgraded);
     let mut server = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, auth).await?;
     let (from_client, from_server) = tokio::io::copy_bidirectional(&mut upgraded, &mut server).await?;
-    log::debug!("client wrote {} bytes and received {} bytes", from_client, from_server);
+    log::debug!("client wrote {from_client} bytes and received {from_server} bytes");
     Ok(())
 }
 

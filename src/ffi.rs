@@ -12,7 +12,7 @@ pub struct CCallback(pub Option<unsafe extern "C" fn(c_int, *mut c_void)>, pub *
 impl CCallback {
     pub unsafe fn call(self, arg: c_int) {
         if let Some(cb) = self.0 {
-            cb(arg, self.1);
+            unsafe { cb(arg, self.1) };
         }
     }
 }
@@ -31,7 +31,7 @@ unsafe impl Sync for CCallback {}
 ///   where 0 means off, 1 means error, 2 means warn, 3 means info, 4 means debug, and 5 means trace.
 /// - `callback`: A function pointer, which is an optional callback function that will be called when the server is listening on the local address.
 /// - `ctx`: A pointer to the context, which is an optional pointer that will be passed to the callback function.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn socks_hub_run(
     listen_proxy_role: *const c_char,
     remote_server: *const c_char,
@@ -41,16 +41,16 @@ pub unsafe extern "C" fn socks_hub_run(
 ) -> c_int {
     log::set_max_level(verbosity.into());
     if let Err(err) = log::set_boxed_logger(Box::<crate::dump_logger::DumpLogger>::default()) {
-        log::warn!("Failed to set logger: {}", err);
+        log::warn!("Failed to set logger: {err}");
     }
 
-    let listen_proxy_role = std::ffi::CStr::from_ptr(listen_proxy_role).to_str().unwrap();
+    let listen_proxy_role = unsafe { std::ffi::CStr::from_ptr(listen_proxy_role) }.to_str().unwrap();
 
-    let remote_server = std::ffi::CStr::from_ptr(remote_server).to_str().unwrap();
+    let remote_server = unsafe { std::ffi::CStr::from_ptr(remote_server) }.to_str().unwrap();
 
     let ccb = CCallback(callback, ctx);
     let cb = |addr: SocketAddr| {
-        log::info!("Listening on {}", addr);
+        log::info!("Listening on {addr}");
         let port = addr.port() as c_int;
         unsafe {
             ccb.call(port);
@@ -70,7 +70,7 @@ pub unsafe extern "C" fn socks_hub_run(
 ///
 /// Shutdown the socks-hub component.
 /// This function must be called in another thread to stop the `socks_hub_run` function.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn socks_hub_stop() -> c_int {
     crate::api::api_internal_stop()
 }

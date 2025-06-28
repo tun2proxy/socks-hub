@@ -14,7 +14,7 @@ pub(crate) static DUMP_CALLBACK: Mutex<Option<DumpCallback>> = Mutex::new(None);
 /// The dump_level is the log level, which is an enum from 0 to 5, where 0 means off, 1 means error, 2 means warn, 3 means info, 4 means debug, and 5 means trace.
 /// The info is the log message, which is a string.
 /// The ctx is the context pointer, which can be customized by the user to take ability to deal with the log message.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn socks_hub_set_log_callback(
     callback: Option<unsafe extern "C" fn(ArgVerbosity, *const c_char, *mut c_void)>,
     ctx: *mut c_void,
@@ -28,7 +28,7 @@ pub struct DumpCallback(Option<unsafe extern "C" fn(ArgVerbosity, *const c_char,
 impl DumpCallback {
     unsafe fn call(self, dump_level: ArgVerbosity, info: *const c_char) {
         if let Some(cb) = self.0 {
-            cb(dump_level, info, self.1);
+            unsafe { cb(dump_level, info, self.1) };
         }
     }
 }
