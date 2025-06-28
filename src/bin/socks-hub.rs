@@ -6,7 +6,7 @@
 //! 3. send requests
 //!    $ curl -i https://www.google.com/
 
-use socks_hub::{BoxError, Config, main_entry};
+use socks_hub_core::{BoxError, Config, main_entry};
 use std::net::SocketAddr;
 
 #[tokio::main]

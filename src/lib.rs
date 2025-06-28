@@ -35,7 +35,7 @@ mod dump_logger;
 mod ffi;
 
 #[cfg(feature = "sockshub")]
-pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 #[cfg(feature = "sockshub")]
 pub type Result<T, E = BoxError> = std::result::Result<T, E>;
 

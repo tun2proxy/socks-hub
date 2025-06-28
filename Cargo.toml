@@ -10,7 +10,11 @@ readme = "README.md"
 edition = "2024"
 rust-version = "1.85"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lib]
+name = "socks_hub_core"
 crate-type = ["staticlib", "cdylib", "lib"]
 
 [[bin]]
