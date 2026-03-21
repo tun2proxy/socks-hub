@@ -23,7 +23,13 @@ where
         config
             .acl_file
             .as_ref()
-            .and_then(|acl_file| crate::acl::AccessControl::load_from_file(acl_file).ok())
+            .and_then(|acl_file| match crate::acl::AccessControl::load_from_file(acl_file) {
+                Ok(ac) => Some(ac),
+                Err(e) => {
+                    log::warn!("Could not init ACL: {e}");
+                    None
+                }
+            })
     });
 
     let listen_addr = config.listen_proxy_role.addr;
