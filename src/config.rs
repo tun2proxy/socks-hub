@@ -19,6 +19,7 @@ pub struct Config {
 
     /// ACL (Access Control List) file path, optional
     #[arg(short, long, value_name = "path")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub acl_file: Option<std::path::PathBuf>,
 
     /// Log verbosity level
@@ -84,6 +85,7 @@ impl Config {
 pub struct ArgProxy {
     pub proxy_type: ProxyType,
     pub addr: SocketAddr,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub credentials: Option<Credentials>,
 }
 

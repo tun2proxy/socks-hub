@@ -11,6 +11,8 @@ use socks5_impl::protocol::{Address, UserKey};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
+const HTTP_DEFAULT_PORT: u16 = 80;
+
 #[cfg(feature = "acl")]
 static ACL_CENTER: std::sync::OnceLock<Option<crate::acl::AccessControl>> = std::sync::OnceLock::new();
 
@@ -23,7 +25,13 @@ where
         config
             .acl_file
             .as_ref()
-            .and_then(|acl_file| crate::acl::AccessControl::load_from_file(acl_file).ok())
+            .and_then(|acl_file| match crate::acl::AccessControl::load_from_file(acl_file) {
+                Ok(ac) => Some(ac),
+                Err(e) => {
+                    log::warn!("Could not init ACL: {e}");
+                    None
+                }
+            })
     });
 
     let listen_addr = config.listen_proxy_role.addr;
@@ -114,7 +122,7 @@ async fn proxy(
 
     if Method::CONNECT == req.method() {
         if let Some(host) = req.uri().host() {
-            let port = req.uri().port_u16().unwrap_or(80);
+            let port = req.uri().port_u16().unwrap_or(HTTP_DEFAULT_PORT);
             let s5addr = Address::from((host, port));
 
             tokio::task::spawn(async move {
@@ -136,7 +144,7 @@ async fn proxy(
         }
     } else {
         let host = req.uri().host().unwrap_or_default();
-        let port = req.uri().port_u16().unwrap_or(80);
+        let port = req.uri().port_u16().unwrap_or(HTTP_DEFAULT_PORT);
         let s5addr = Address::from((host, port));
 
         log::debug!("destination address {s5addr}");
