@@ -11,3 +11,7 @@ exclude = []
 
 [enum]
 prefix_with_name = true
+
+[defines]
+"feature = sockshub" = "SOCKSHUB"
+"feature = acl" = "ACL"

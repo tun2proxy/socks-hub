@@ -23,5 +23,5 @@ EOF
 echo "Creating XCFramework"
 rm -rf ./socks-hub.xcframework
 xcodebuild -create-xcframework \
-    -library ./target/aarch64-apple-ios/debug/libsocks_hub.a -headers ./target/include/ \
+    -library ./target/aarch64-apple-ios/debug/libsocks_hub_core.a -headers ./target/include/ \
     -output ./socks-hub.xcframework

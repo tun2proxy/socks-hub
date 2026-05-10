@@ -38,20 +38,20 @@ echo "lipo..."
 
 echo "Simulator"
 lipo -create \
-    target/aarch64-apple-ios-sim/release/libsocks_hub.a \
-    target/x86_64-apple-ios/release/libsocks_hub.a \
+    target/aarch64-apple-ios-sim/release/libsocks_hub_core.a \
+    target/x86_64-apple-ios/release/libsocks_hub_core.a \
     -output ./target/libsocks_hub-ios-sim.a
 
 echo "MacOS"
 lipo -create \
-    target/aarch64-apple-darwin/release/libsocks_hub.a \
-    target/x86_64-apple-darwin/release/libsocks_hub.a \
+    target/aarch64-apple-darwin/release/libsocks_hub_core.a \
+    target/x86_64-apple-darwin/release/libsocks_hub_core.a \
     -output ./target/libsocks_hub-macos.a
 
 echo "Creating XCFramework"
 rm -rf ./socks-hub.xcframework
 xcodebuild -create-xcframework \
-    -library ./target/aarch64-apple-ios/release/libsocks_hub.a -headers ./target/include/ \
+    -library ./target/aarch64-apple-ios/release/libsocks_hub_core.a -headers ./target/include/ \
     -library ./target/libsocks_hub-ios-sim.a -headers ./target/include/ \
     -library ./target/libsocks_hub-macos.a -headers ./target/include/ \
     -output ./socks-hub.xcframework

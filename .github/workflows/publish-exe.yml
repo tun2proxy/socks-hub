@@ -9,6 +9,7 @@ jobs:
   build_publish:
     name: Publishing Tasks
     strategy:
+      fail-fast: false
       matrix:
         target:
           - x86_64-unknown-linux-gnu
@@ -56,6 +57,7 @@ jobs:
           fi
 
       - name: Build
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           if [[ "${{ matrix.host_os }}" == "ubuntu-latest" ]]; then
@@ -66,9 +68,9 @@ jobs:
           cbindgen -c cbindgen.toml -l C -o ./socks_hub_ffi.h
           if [[ "${{ matrix.host_os }}" == "windows-latest" ]]; then
             powershell -Command "(Get-Item README.md).LastWriteTime = Get-Date"
-            powershell Compress-Archive -Path target/${{ matrix.target }}/release/socks-hub.exe, ./README.md, ./socks_hub_ffi.h, target/${{ matrix.target }}/release/socks_hub.dll -DestinationPath mypubdir4/socks-hub-${{ matrix.target }}.zip
+            powershell Compress-Archive -Path target/${{ matrix.target }}/release/socks-hub.exe, ./README.md, ./socks_hub_ffi.h, target/${{ matrix.target }}/release/socks_hub_core.dll -DestinationPath mypubdir4/socks-hub-${{ matrix.target }}.zip
           elif [[ "${{ matrix.host_os }}" == "macos-latest" ]]; then
-            zip -j mypubdir4/socks-hub-${{ matrix.target }}.zip target/${{ matrix.target }}/release/socks-hub ./README.md ./socks_hub_ffi.h target/${{ matrix.target }}/release/libsocks_hub.dylib
+            zip -j mypubdir4/socks-hub-${{ matrix.target }}.zip target/${{ matrix.target }}/release/socks-hub ./README.md ./socks_hub_ffi.h target/${{ matrix.target }}/release/libsocks_hub_core.dylib
             if [[ "${{ matrix.target }}" == "x86_64-apple-darwin" ]]; then
               ./build-aarch64-apple-ios.sh
               zip -r mypubdir4/socks-hub-aarch64-apple-ios-xcframework.zip ./socks-hub.xcframework/
@@ -76,7 +78,7 @@ jobs:
               zip -r mypubdir4/socks-hub-apple-xcframework.zip ./socks-hub.xcframework/
             fi
           elif [[ "${{ matrix.host_os }}" == "ubuntu-latest" ]]; then
-            zip -j mypubdir4/socks-hub-${{ matrix.target }}.zip target/${{ matrix.target }}/release/socks-hub ./README.md ./socks_hub_ffi.h target/${{ matrix.target }}/release/libsocks_hub.so
+            zip -j mypubdir4/socks-hub-${{ matrix.target }}.zip target/${{ matrix.target }}/release/socks-hub ./README.md ./socks_hub_ffi.h target/${{ matrix.target }}/release/libsocks_hub_core.so
           fi
 
       - name: Publish
