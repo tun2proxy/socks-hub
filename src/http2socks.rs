@@ -3,7 +3,7 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::{
     Method, Request, Response,
-    header::{AUTHORIZATION, HeaderName, HeaderValue, PROXY_AUTHORIZATION},
+    header::{AUTHORIZATION, HeaderName, HeaderValue, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION},
     service::service_fn,
     upgrade::Upgraded,
 };
@@ -107,17 +107,17 @@ async fn proxy(
     }
 
     let (auth_header, auth_value) = get_proxy_authorization(&req);
-    // Sometimes the CONNECT method will missing the authorization header, I think it's a bug of the browser.
-    if Method::CONNECT != req.method() || auth_header.is_some() {
-        if !verify_basic_authorization(&credentials, auth_value) {
-            log::error!("authorization fail");
-            let mut resp = Response::new(empty());
-            *resp.status_mut() = hyper::StatusCode::UNAUTHORIZED;
-            return Ok(resp);
-        }
-        if let Some(auth_header) = auth_header {
-            let _ = req.headers_mut().remove(auth_header);
-        }
+    // Some clients may omit proxy auth on the first CONNECT request and retry after a 407 challenge.
+    if !is_proxy_authorized(&credentials, auth_value) {
+        log::warn!("authorization fail");
+        let mut resp = Response::new(empty());
+        *resp.status_mut() = hyper::StatusCode::PROXY_AUTHENTICATION_REQUIRED;
+        resp.headers_mut()
+            .insert(PROXY_AUTHENTICATE, HeaderValue::from_static("Basic realm=\"socks-hub\""));
+        return Ok(resp);
+    }
+    if let Some(auth_header) = auth_header {
+        let _ = req.headers_mut().remove(auth_header);
     }
 
     if Method::CONNECT == req.method() {
@@ -233,4 +233,25 @@ fn verify_basic_authorization(credentials: &Credentials, header_value: Option<&H
         .and_then(|s| s.strip_prefix("Basic "))
         .and_then(|v| base64easy::decode(v, base64easy::EngineKind::Standard).ok())
         .is_some_and(|v| v == credentials.to_vec())
+}
+
+fn is_proxy_authorized(credentials: &Credentials, header_value: Option<&HeaderValue>) -> bool {
+    credentials.is_empty() || verify_basic_authorization(credentials, header_value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connect_requires_proxy_auth_when_credentials_are_configured() {
+        let credentials = Credentials::new("alice", "secret");
+        assert!(!is_proxy_authorized(&credentials, None));
+    }
+
+    #[test]
+    fn connect_allows_missing_proxy_auth_when_no_credentials_are_configured() {
+        let credentials = Credentials::default();
+        assert!(is_proxy_authorized(&credentials, None));
+    }
 }
