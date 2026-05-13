@@ -55,7 +55,7 @@ clap = { version = "4.6.1", features = [
     "derive",
     "wrap_help",
 ], optional = true }
-ctrlc2 = { version = "3.7.3", features = [
+ctrlc2 = { version = "4.0.0", features = [
     "termination",
     "async",
 ], optional = true }
