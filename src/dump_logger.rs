@@ -46,8 +46,9 @@ impl log::Log for DumpLogger {
 
     fn log(&self, record: &log::Record) {
         if self.enabled(record.metadata()) {
+            let module = record.module_path().unwrap_or("");
             let current_crate_name = env!("CARGO_CRATE_NAME");
-            if record.module_path().unwrap_or("").starts_with(current_crate_name) {
+            if module.starts_with(current_crate_name) || module.starts_with("tun2proxy") {
                 self.do_dump_log(record);
             }
         }
