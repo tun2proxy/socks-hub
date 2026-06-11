@@ -13,7 +13,12 @@ pub struct Config {
     #[arg(short, long, value_parser = |s: &str| ArgProxy::try_from(s), value_name = "URL")]
     pub listen_proxy_role: ArgProxy,
 
-    /// Remote SOCKS5 server, URL in form of socks5://[username[:password]@]host:port
+    /// Optional middle SOCKS5 server, URL in form of socks5://[username[:password]@]host:port
+    #[arg(short, long, value_parser = |s: &str| ArgProxy::try_from(s), value_name = "URL")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub middle_server: Option<ArgProxy>,
+
+    /// Target SOCKS5 server, URL in form of socks5://[username[:password]@]host:port
     #[arg(short, long, value_parser = |s: &str| ArgProxy::try_from(s), value_name = "URL")]
     pub remote_server: ArgProxy,
 
@@ -32,6 +37,7 @@ impl Default for Config {
         let remote_server: ArgProxy = "socks5://127.0.0.1:1080".try_into().unwrap();
         Config {
             listen_proxy_role: ArgProxy::default(),
+            middle_server: None,
             remote_server,
             acl_file: None,
             verbosity: ArgVerbosity::Info,
@@ -47,6 +53,7 @@ impl Config {
     pub fn new(listen_proxy_role: &str, remote_server: &str) -> Self {
         Config {
             listen_proxy_role: listen_proxy_role.try_into().unwrap(),
+            middle_server: None,
             remote_server: remote_server.try_into().unwrap(),
             ..Config::default()
         }
@@ -59,6 +66,18 @@ impl Config {
 
     pub fn remote_server(&mut self, remote_server: &str) -> &mut Self {
         self.remote_server = remote_server.try_into().unwrap();
+        self
+    }
+
+    pub fn middle_server(&mut self, middle_server: &str) -> &mut Self {
+        self.middle_server = Some(middle_server.try_into().unwrap());
+        self
+    }
+
+    pub fn middle_server_opt(&mut self, middle_server: Option<&str>) -> &mut Self {
+        if let Some(middle_server) = middle_server {
+            self.middle_server(middle_server);
+        }
         self
     }
 
@@ -78,6 +97,13 @@ impl Config {
 
     pub fn get_s5_credentials(&self) -> Credentials {
         self.remote_server.credentials.clone().unwrap_or_default()
+    }
+
+    pub fn get_middle_s5_credentials(&self) -> Credentials {
+        self.middle_server
+            .as_ref()
+            .and_then(|proxy| proxy.credentials.clone())
+            .unwrap_or_default()
     }
 }
 

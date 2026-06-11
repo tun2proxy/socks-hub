@@ -1,5 +1,5 @@
 //! Usage:
-//! 1. `cargo run -- -l http://127.0.0.1:8080 -r socks5://127.0.0.1:1080`
+//! 1. `cargo run -- -l http://127.0.0.1:8080 -r socks5://127.0.0.1:1080 -m socks5://127.0.0.1:1081`
 //! 2. In Linux, configurate `http_proxy` in command line
 //!    $ export http_proxy=http://127.0.0.1:8080
 //!    $ export https_proxy=http://127.0.0.1:8080

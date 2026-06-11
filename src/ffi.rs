@@ -26,6 +26,8 @@ unsafe impl Sync for CCallback {}
 /// until the `socks_hub_stop` function is called in another thread.
 /// - `listen_proxy_role`: The local listen address and the proxy role, which is a string in the format of
 ///   "http://username:password@127.0.0.1:8080" or "socks5://[username[:password]@]host:port".
+/// - `middle_server`: Optional middle SOCKS5 server, which is a string in the format of
+///   "socks5://[username[:password]@]host:port". Pass null to disable it.
 /// - `remote_server`: The remote SOCKS5 server address, which is a string in the format of "socks5://[username[:password]@]host:port".
 /// - `verbosity`: The verbosity level, which is an integer from 0 to 5,
 ///   where 0 means off, 1 means error, 2 means warn, 3 means info, 4 means debug, and 5 means trace.
@@ -34,6 +36,7 @@ unsafe impl Sync for CCallback {}
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn socks_hub_run(
     listen_proxy_role: *const c_char,
+    middle_server: *const c_char,
     remote_server: *const c_char,
     verbosity: ArgVerbosity,
     callback: Option<unsafe extern "C" fn(c_int, *mut c_void)>,
@@ -45,6 +48,12 @@ pub unsafe extern "C" fn socks_hub_run(
     }
 
     let listen_proxy_role = unsafe { std::ffi::CStr::from_ptr(listen_proxy_role) }.to_str().unwrap();
+
+    let middle_server = if middle_server.is_null() {
+        None
+    } else {
+        Some(unsafe { std::ffi::CStr::from_ptr(middle_server) }.to_str().unwrap())
+    };
 
     let remote_server = unsafe { std::ffi::CStr::from_ptr(remote_server) }.to_str().unwrap();
 
@@ -61,6 +70,7 @@ pub unsafe extern "C" fn socks_hub_run(
     config
         .listen_proxy_role(listen_proxy_role)
         .verbosity(verbosity)
+        .middle_server_opt(middle_server)
         .remote_server(remote_server);
 
     crate::api::api_internal_run(config, Some(cb))

@@ -47,6 +47,11 @@ where
     if config.remote_server.proxy_type != ProxyType::Socks5 {
         return Err("remote server must be socks5".into());
     }
+    if let Some(middle_server) = &config.middle_server {
+        if middle_server.proxy_type != ProxyType::Socks5 {
+            return Err("middle server must be socks5".into());
+        }
+    }
     match config.listen_proxy_role.proxy_type {
         ProxyType::Http => http2socks::main_entry(config, cancel_token, callback).await,
         ProxyType::Socks5 => socks2socks::main_entry(config, cancel_token, callback).await,
@@ -57,16 +62,56 @@ where
 pub(crate) const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[cfg(feature = "sockshub")]
-pub(crate) async fn create_s5_connect<A: tokio::net::ToSocketAddrs>(
-    server: A,
+pub(crate) async fn create_s5_connect(
+    server: std::net::SocketAddr,
     dur: std::time::Duration,
     dst: &socks5_impl::protocol::Address,
     auth: Option<socks5_impl::protocol::UserKey>,
+    middle_server: Option<std::net::SocketAddr>,
+    middle_auth: Option<socks5_impl::protocol::UserKey>,
 ) -> std::io::Result<tokio::io::BufStream<tokio::net::TcpStream>> {
-    let stream = tokio::time::timeout(dur, tokio::net::TcpStream::connect(server)).await??;
-    let mut stream = tokio::io::BufStream::new(stream);
-    socks5_impl::client::connect(&mut stream, dst, auth).await?;
+    let mut stream = connect_proxy_stream(server, dur, middle_server, middle_auth).await?;
+    socks5_impl::client::connect(&mut stream, dst, auth)
+        .await
+        .map_err(std_io_error_other)?;
     Ok(stream)
+}
+
+#[cfg(feature = "sockshub")]
+async fn connect_proxy_stream(
+    server: std::net::SocketAddr,
+    dur: std::time::Duration,
+    middle_server: Option<std::net::SocketAddr>,
+    middle_auth: Option<socks5_impl::protocol::UserKey>,
+) -> std::io::Result<tokio::io::BufStream<tokio::net::TcpStream>> {
+    let stream = if let Some(middle_server) = middle_server {
+        let stream = tokio::time::timeout(dur, tokio::net::TcpStream::connect(middle_server)).await??;
+        let mut stream = tokio::io::BufStream::new(stream);
+        socks5_impl::client::connect(&mut stream, server, middle_auth)
+            .await
+            .map_err(std_io_error_other)?;
+        stream
+    } else {
+        let stream = tokio::time::timeout(dur, tokio::net::TcpStream::connect(server)).await??;
+        tokio::io::BufStream::new(stream)
+    };
+    Ok(stream)
+}
+
+#[cfg(feature = "sockshub")]
+pub(crate) async fn create_s5_udp_client(
+    server: std::net::SocketAddr,
+    dur: std::time::Duration,
+    auth: Option<socks5_impl::protocol::UserKey>,
+    middle_server: Option<std::net::SocketAddr>,
+    middle_auth: Option<socks5_impl::protocol::UserKey>,
+) -> std::io::Result<socks5_impl::client::SocksUdpClient> {
+    let stream = connect_proxy_stream(server, dur, middle_server, middle_auth).await?;
+    let client_addr = if server.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
+    let client = tokio::net::UdpSocket::bind(client_addr).await?;
+    socks5_impl::client::SocksDatagram::udp_associate(stream, client, auth)
+        .await
+        .map_err(std_io_error_other)
 }
 
 #[cfg(feature = "sockshub")]

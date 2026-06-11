@@ -40,9 +40,32 @@ Options:
   -l, --listen-proxy-role <URL>  Source proxy role, URL in the form proto://[username[:password]@]host:port, where proto is one of socks5,
                                  http. Username and password are encoded in percent encoding. For  
                                  example: http://myname:pass%40word@127.0.0.1:1080
+  -m, --middle-server <URL>      Optional middle SOCKS5 server, URL in form of socks5://[username[:password]@]host:port
   -r, --remote-server <URL>      Remote SOCKS5 server, URL in form of socks5://[username[:password]@]host:port
   -a, --acl-file <path>          ACL (Access Control List) file path, optional
   -v, --verbosity <level>        Log verbosity level [default: info] [possible values: off, error, warn, info, debug, trace]
   -h, --help                     Print help
   -V, --version                  Print version
 ```
+
+If you want a SOCKS5 chain, pass `-m` for the middle hop and `-r` for the final target SOCKS5 server.
+
+The C API exports the same option as the second argument of `socks_hub_run`; pass `NULL` to skip the middle hop.
+
+### Smoke tests
+
+By default they use `target/debug/socks-hub`. Set `SOCKS_HUB_BIN` if the binary lives somewhere else.
+
+The repository includes small Python smoke tests for the chained SOCKS5 flow:
+
+```shell
+python3 scripts/smoke_tcp_chain.py
+python3 scripts/smoke_udp_chain.py
+python3 scripts/smoke_tcp_direct.py
+python3 scripts/smoke_udp_direct.py
+```
+
+> Before running any test, generate the ACL file first:
+> ```shell
+> python3 genacl_proxy_gfw_bypass_china_ip.py
+> ```

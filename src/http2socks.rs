@@ -95,6 +95,8 @@ async fn proxy(
     let server = config.remote_server.addr;
     let credentials = config.get_credentials();
     let s5_auth = config.get_s5_credentials().try_into().ok();
+    let middle_server = config.middle_server.as_ref().map(|proxy| proxy.addr);
+    let middle_s5_auth = config.get_middle_s5_credentials().try_into().ok();
 
     fn get_proxy_authorization(req: &Request<hyper::body::Incoming>) -> (Option<HeaderName>, Option<&HeaderValue>) {
         if let Some(header) = req.headers().get(AUTHORIZATION) {
@@ -128,7 +130,7 @@ async fn proxy(
             tokio::task::spawn(async move {
                 match hyper::upgrade::on(req).await {
                     Ok(upgraded) => {
-                        if let Err(e) = tunnel(upgraded, s5addr, server, s5_auth).await {
+                        if let Err(e) = tunnel(upgraded, s5addr, server, s5_auth, middle_server, middle_s5_auth).await {
                             log::error!("server io error: {e}");
                         };
                     }
@@ -163,7 +165,7 @@ async fn proxy(
         }
 
         log::debug!("connect to SOCKS5 proxy server {server:?}");
-        let stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &s5addr, s5_auth).await?;
+        let stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &s5addr, s5_auth, middle_server, middle_s5_auth).await?;
         proxy_internal(stream, req).await
     }
 }
@@ -198,7 +200,14 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
 
 // Create a TCP connection to host:port, build a tunnel between the connection and
 // the upgraded connection
-async fn tunnel(upgraded: Upgraded, dst: Address, server: SocketAddr, auth: Option<UserKey>) -> std::io::Result<()> {
+async fn tunnel(
+    upgraded: Upgraded,
+    dst: Address,
+    server: SocketAddr,
+    auth: Option<UserKey>,
+    middle_server: Option<SocketAddr>,
+    middle_s5_auth: Option<UserKey>,
+) -> std::io::Result<()> {
     #[cfg(feature = "acl")]
     {
         let mut must_proxied = true;
@@ -218,7 +227,7 @@ async fn tunnel(upgraded: Upgraded, dst: Address, server: SocketAddr, auth: Opti
     }
 
     let mut upgraded = TokioIo::new(upgraded);
-    let mut server = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, auth).await?;
+    let mut server = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, auth, middle_server, middle_s5_auth).await?;
     let (from_client, from_server) = tokio::io::copy_bidirectional(&mut upgraded, &mut server).await?;
     log::debug!("client wrote {from_client} bytes and received {from_server} bytes");
     Ok(())
