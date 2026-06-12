@@ -511,7 +511,9 @@ impl AccessControl {
     /// Returns the ASCII representation a domain name,
     /// if conversion fails returns original string
     fn convert_to_ascii(host: &str) -> Cow<'_, str> {
-        idna::domain_to_ascii(host).map(From::from).unwrap_or_else(|_| host.into())
+        idna::domain_to_ascii(host)
+            .map(|host| Cow::Owned(host.to_ascii_lowercase()))
+            .unwrap_or_else(|_| Cow::Owned(host.to_ascii_lowercase()))
     }
 
     /// Check if target address should be bypassed (for client)

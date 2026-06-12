@@ -155,7 +155,7 @@ async fn proxy(
         {
             let mut must_proxied = true;
             if let Some(Some(acl)) = ACL_CENTER.get() {
-                must_proxied = acl.check_host_in_proxy_list(host).unwrap_or_default();
+                must_proxied = !acl.check_target_bypassed(&s5addr).await;
             }
             if !must_proxied {
                 log::debug!("connect to destination address {s5addr:?} without proxy");
@@ -212,7 +212,7 @@ async fn tunnel(
     {
         let mut must_proxied = true;
         if let Some(Some(acl)) = ACL_CENTER.get() {
-            must_proxied = acl.check_host_in_proxy_list(&dst.domain()).unwrap_or_default();
+            must_proxied = !acl.check_target_bypassed(&dst).await;
         }
         if !must_proxied {
             log::debug!("connect to destination address {dst:?} without proxy");

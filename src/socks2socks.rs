@@ -163,7 +163,7 @@ async fn handle_s5_client_connection(
     {
         let mut must_proxied = true;
         if let Some(Some(acl)) = ACL_CENTER.get() {
-            must_proxied = acl.check_host_in_proxy_list(&dst.domain()).unwrap_or_default();
+            must_proxied = !acl.check_target_bypassed(&dst).await;
         }
         if !must_proxied {
             log::debug!("connect to destination address {dst:?} without proxy");
