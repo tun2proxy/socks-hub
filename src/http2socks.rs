@@ -11,6 +11,9 @@ use socks5_impl::protocol::{Address, UserKey};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
+#[cfg(feature = "acl")]
+use crate::acl::TargetDecision;
+
 const HTTP_DEFAULT_PORT: u16 = 80;
 
 #[cfg(feature = "acl")]
@@ -127,6 +130,20 @@ async fn proxy(
             let port = req.uri().port_u16().unwrap_or(HTTP_DEFAULT_PORT);
             let s5addr = Address::from((host, port));
 
+            #[cfg(feature = "acl")]
+            {
+                if let Some(Some(acl)) = ACL_CENTER.get() {
+                    match acl.decide_target(&s5addr).await {
+                        TargetDecision::Proxy | TargetDecision::Bypass => {}
+                        TargetDecision::Block => {
+                            let mut resp = Response::new(full("blocked by ACL"));
+                            *resp.status_mut() = hyper::http::StatusCode::FORBIDDEN;
+                            return Ok(resp);
+                        }
+                    }
+                }
+            }
+
             tokio::task::spawn(async move {
                 match hyper::upgrade::on(req).await {
                     Ok(upgraded) => {
@@ -155,7 +172,15 @@ async fn proxy(
         {
             let mut must_proxied = true;
             if let Some(Some(acl)) = ACL_CENTER.get() {
-                must_proxied = !acl.check_target_bypassed(&s5addr).await;
+                match acl.decide_target(&s5addr).await {
+                    TargetDecision::Proxy => must_proxied = true,
+                    TargetDecision::Bypass => must_proxied = false,
+                    TargetDecision::Block => {
+                        let mut resp = Response::new(full("blocked by ACL"));
+                        *resp.status_mut() = hyper::http::StatusCode::FORBIDDEN;
+                        return Ok(resp);
+                    }
+                }
             }
             if !must_proxied {
                 log::debug!("connect to destination address {s5addr:?} without proxy");
@@ -212,7 +237,13 @@ async fn tunnel(
     {
         let mut must_proxied = true;
         if let Some(Some(acl)) = ACL_CENTER.get() {
-            must_proxied = !acl.check_target_bypassed(&dst).await;
+            match acl.decide_target(&dst).await {
+                TargetDecision::Proxy => must_proxied = true,
+                TargetDecision::Bypass => must_proxied = false,
+                TargetDecision::Block => {
+                    return Err(std_io_error_other("blocked by ACL"));
+                }
+            }
         }
         if !must_proxied {
             log::debug!("connect to destination address {dst:?} without proxy");

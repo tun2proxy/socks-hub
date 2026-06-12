@@ -10,6 +10,9 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::net::UdpSocket;
 
 #[cfg(feature = "acl")]
+use crate::acl::TargetDecision;
+
+#[cfg(feature = "acl")]
 static ACL_CENTER: std::sync::OnceLock<Option<crate::acl::AccessControl>> = std::sync::OnceLock::new();
 
 pub(crate) static MAX_UDP_RELAY_PACKET_SIZE: usize = 1500;
@@ -163,7 +166,15 @@ async fn handle_s5_client_connection(
     {
         let mut must_proxied = true;
         if let Some(Some(acl)) = ACL_CENTER.get() {
-            must_proxied = !acl.check_target_bypassed(&dst).await;
+            match acl.decide_target(&dst).await {
+                TargetDecision::Proxy => must_proxied = true,
+                TargetDecision::Bypass => must_proxied = false,
+                TargetDecision::Block => {
+                    let mut conn = connect.reply(Reply::ConnectionNotAllowed, Address::unspecified()).await?;
+                    conn.shutdown().await?;
+                    return Ok(());
+                }
+            }
         }
         if !must_proxied {
             log::debug!("connect to destination address {dst:?} without proxy");

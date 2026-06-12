@@ -2,6 +2,9 @@
 //!
 //! This is for advance controlling server behaviors in both local and proxy servers.
 //!
+//! The ACL has one shared target-routing rule set used by both client-side and server-side
+//! proxy decisions. Server-only rules are limited to peer blocking and outbound blocking.
+//!
 //! source link https://github.com/shadowsocks/shadowsocks-rust/blob/master/crates/shadowsocks-service/src/acl/mod.rs
 //!
 
@@ -23,13 +26,26 @@ use std::{
 mod sub_domains_tree;
 use sub_domains_tree::SubDomainsTree;
 
-/// Strategy mode that ACL is running
+/// Result of evaluating how a target should be handled.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum Mode {
-    /// BlackList mode, rejects or bypasses all requests by default
-    BlackList,
-    /// WhiteList mode, accepts or proxies all requests by default
-    WhiteList,
+pub enum TargetDecision {
+    Proxy,
+    Bypass,
+    Block,
+}
+
+impl TargetDecision {
+    pub fn should_proxy(self) -> bool {
+        matches!(self, TargetDecision::Proxy)
+    }
+
+    pub fn should_bypass(self) -> bool {
+        matches!(self, TargetDecision::Bypass)
+    }
+
+    pub fn should_block(self) -> bool {
+        matches!(self, TargetDecision::Block)
+    }
 }
 
 #[derive(Clone)]
@@ -238,6 +254,43 @@ impl ParsingRules {
         self.add_tree_rule_inner(rule)
     }
 
+    fn add_rule_line(&mut self, line: &str) -> io::Result<()> {
+        if let Some(rule) = line.strip_prefix("||") {
+            self.add_tree_rule(rule)?;
+            return Ok(());
+        }
+
+        if let Some(rule) = line.strip_prefix('|') {
+            self.add_set_rule(rule)?;
+            return Ok(());
+        }
+
+        match line.parse::<IpNet>() {
+            Ok(IpNet::V4(v4)) => {
+                self.add_ipv4_rule(v4);
+                Ok(())
+            }
+            Ok(IpNet::V6(v6)) => {
+                self.add_ipv6_rule(v6);
+                Ok(())
+            }
+            Err(..) => match line.parse::<IpAddr>() {
+                Ok(IpAddr::V4(v4)) => {
+                    self.add_ipv4_rule(v4);
+                    Ok(())
+                }
+                Ok(IpAddr::V6(v6)) => {
+                    self.add_ipv6_rule(v6);
+                    Ok(())
+                }
+                Err(..) => {
+                    self.add_regex_rule(line.to_owned());
+                    Ok(())
+                }
+            },
+        }
+    }
+
     fn add_tree_rule_inner(&mut self, rule: &str) -> io::Result<()> {
         // SubDomainsTree do lowercase conversion inside insert
         self.rules_tree.insert(self.check_is_ascii(rule)?);
@@ -276,61 +329,31 @@ impl ParsingRules {
     }
 }
 
-/// ACL rules
+/// ACL rules v2
 ///
-/// ## Sections
+/// ACL files are small ordered routing tables. They have one default action and a handful of
+/// explicit sections:
 ///
-/// ACL File is formatted in sections, each section has a name with surrounded by brackets `[` and `]`
-/// followed by Rules line by line.
+/// - `[default proxy]` / `[default direct]` / `[default block]` - one line, specifies the default action
+/// - `[proxy_rules]` - targets that must go through proxy
+/// - `[direct_rules]` - targets that must connect directly
+/// - `[client_block]` - client addresses that must be rejected by the server
+/// - `[outbound_block]` / `[block]` - targets that must be blocked
 ///
-/// ```plain
-/// [SECTION-1]
-/// RULE-1
-/// RULE-2
-/// RULE-3
+/// Rule lines can be one of:
 ///
-/// [SECTION-2]
-/// RULE-1
-/// RULE-2
-/// RULE-3
-/// ```
-///
-/// Available sections are
-///
-/// - For local servers (`sslocal`, `ssredir`, ...)
-///     * `[bypass_all]` - ACL runs in `BlackList` mode.
-///     * `[proxy_all]` - ACL runs in `WhiteList` mode.
-///     * `[bypass_list]` - Rules for connecting directly
-///     * `[proxy_list]` - Rules for connecting through proxies
-/// - For remote servers (`ssserver`)
-///     * `[reject_all]` - ACL runs in `BlackList` mode.
-///     * `[accept_all]` - ACL runs in `WhiteList` mode.
-///     * `[black_list]` - Rules for rejecting
-///     * `[white_list]` - Rules for allowing
-///     * `[outbound_block_list]` - Rules for blocking outbound addresses.
-///
-/// ## Mode
-///
-/// Mode is the default ACL strategy for those addresses that are not in configuration file.
-///
-/// - `BlackList` - Bypasses / Rejects all addresses except those in `[proxy_list]` or `[white_list]`
-/// - `WhiteList` - Proxies / Accepts all addresses except those in `[bypass_list]` or `[black_list]`
-///
-/// ## Rules
-///
-/// Rules can be either
-///
-/// - CIDR form network addresses, like `10.9.0.32/16`
-/// - IP addresses, like `127.0.0.1` or `::1`
-/// - Regular Expression for matching hosts, like `(^|\.)gmail\.com$`
-/// - Domain with preceding `|` for exact matching, like `|google.com`
-/// - Domain with preceding `||` for matching with subdomains, like `||google.com`
+/// - CIDR network, like `10.9.0.32/16`
+/// - IP address, like `127.0.0.1` or `::1`
+/// - Exact domain, like `|google.com`
+/// - Domain suffix, like `||google.com`
+/// - Regular expression, like `(^|\.)gmail\.com$`
 #[derive(Debug, Clone)]
 pub struct AccessControl {
+    default_action: TargetDecision,
+    proxy_rules: Rules,
+    direct_rules: Rules,
+    client_block: Rules,
     outbound_block: Rules,
-    black_list: Rules,
-    white_list: Rules,
-    mode: Mode,
     file_path: PathBuf,
 }
 
@@ -345,17 +368,28 @@ impl AccessControl {
         let fp = File::open(file_path_ref)?;
         let r = BufReader::new(fp);
 
-        let mut mode = Mode::BlackList;
+        let mut default_action = None;
 
-        let mut outbound_block = ParsingRules::new("[outbound_block_list]");
-        let mut bypass = ParsingRules::new("[black_list] or [bypass_list]");
-        let mut proxy = ParsingRules::new("[white_list] or [proxy_list]");
-        let mut curr = &mut bypass;
+        let mut proxy = ParsingRules::new("[proxy_rules]");
+        let mut direct = ParsingRules::new("[direct_rules]");
+        let mut client_block = ParsingRules::new("[client_block]");
+        let mut outbound_block = ParsingRules::new("[outbound_block]");
+        let mut curr = &mut direct;
 
-        log::trace!("ACL parsing start from mode {mode:?} and black_list / bypass_list");
+        enum Section {
+            Default,
+            ProxyRules,
+            DirectRules,
+            ClientBlock,
+            OutboundBlock,
+        }
+
+        let mut section = Section::Default;
 
         for line in r.lines() {
             let line = line?;
+            let line = line.trim();
+
             if line.is_empty() {
                 continue;
             }
@@ -365,76 +399,74 @@ impl AccessControl {
                 continue;
             }
 
-            let line = line.trim();
-
             if !line.is_ascii() {
                 log::warn!("ACL rule {line} containing non-ASCII characters, skipped");
                 continue;
             }
 
-            if let Some(rule) = line.strip_prefix("||") {
-                curr.add_tree_rule(rule)?;
-                continue;
-            }
-
-            if let Some(rule) = line.strip_prefix('|') {
-                curr.add_set_rule(rule)?;
-                continue;
-            }
-
-            match line {
-                "[reject_all]" | "[bypass_all]" => {
-                    mode = Mode::WhiteList;
-                    log::trace!("switch to mode {mode:?}");
-                }
-                "[accept_all]" | "[proxy_all]" => {
-                    mode = Mode::BlackList;
-                    log::trace!("switch to mode {mode:?}");
-                }
-                "[outbound_block_list]" => {
-                    curr = &mut outbound_block;
-                    log::trace!("loading outbound_block_list");
-                }
-                "[black_list]" | "[bypass_list]" => {
-                    curr = &mut bypass;
-                    log::trace!("loading black_list / bypass_list");
-                }
-                "[white_list]" | "[proxy_list]" => {
-                    curr = &mut proxy;
-                    log::trace!("loading white_list / proxy_list");
-                }
-                _ => {
-                    match line.parse::<IpNet>() {
-                        Ok(IpNet::V4(v4)) => {
-                            curr.add_ipv4_rule(v4);
-                        }
-                        Ok(IpNet::V6(v6)) => {
-                            curr.add_ipv6_rule(v6);
-                        }
-                        Err(..) => {
-                            // Maybe it is a pure IpAddr
-                            match line.parse::<IpAddr>() {
-                                Ok(IpAddr::V4(v4)) => {
-                                    curr.add_ipv4_rule(v4);
-                                }
-                                Ok(IpAddr::V6(v6)) => {
-                                    curr.add_ipv6_rule(v6);
-                                }
-                                Err(..) => {
-                                    curr.add_regex_rule(line.to_owned());
-                                }
-                            }
-                        }
+            if line.starts_with('[') && line.ends_with(']') {
+                let header = line[1..line.len() - 1].trim().to_ascii_lowercase();
+                match header.as_str() {
+                    "default proxy" => {
+                        section = Section::Default;
+                        default_action = Some(TargetDecision::Proxy);
+                        curr = &mut direct;
                     }
+                    "default direct" => {
+                        section = Section::Default;
+                        default_action = Some(TargetDecision::Bypass);
+                        curr = &mut direct;
+                    }
+                    "default block" => {
+                        section = Section::Default;
+                        default_action = Some(TargetDecision::Block);
+                        curr = &mut direct;
+                    }
+                    "proxy" | "proxy_rules" => {
+                        section = Section::ProxyRules;
+                        curr = &mut proxy;
+                    }
+                    "direct" | "direct_rules" => {
+                        section = Section::DirectRules;
+                        curr = &mut direct;
+                    }
+                    "client_block" => {
+                        section = Section::ClientBlock;
+                        curr = &mut client_block;
+                    }
+                    "outbound_block" | "block" => {
+                        section = Section::OutboundBlock;
+                        curr = &mut outbound_block;
+                    }
+                    _ => {
+                        return Err(Error::other(format!("unknown ACL section: {line}")));
+                    }
+                }
+
+                log::trace!("switch to section {line}");
+                continue;
+            }
+
+            match section {
+                Section::Default => {
+                    let value = line.strip_prefix("default ").unwrap_or(line).trim();
+                    if default_action.is_none() {
+                        return Err(Error::other(format!("invalid default ACL action: {value}")));
+                    }
+                    log::trace!("set default action to {default_action:?}");
+                }
+                Section::ProxyRules | Section::DirectRules | Section::ClientBlock | Section::OutboundBlock => {
+                    curr.add_rule_line(line)?;
                 }
             }
         }
 
         Ok(AccessControl {
+            default_action: default_action.ok_or_else(|| Error::other("default action not specified in ACL file"))?,
+            proxy_rules: proxy.into_rules()?,
+            direct_rules: direct.into_rules()?,
+            client_block: client_block.into_rules()?,
             outbound_block: outbound_block.into_rules()?,
-            black_list: bypass.into_rules()?,
-            white_list: proxy.into_rules()?,
-            mode,
             file_path,
         })
     }
@@ -444,116 +476,76 @@ impl AccessControl {
         &self.file_path
     }
 
-    /// Check if domain name is in proxy_list.
-    /// If so, it should be resolved from remote (for Android's DNS relay)
-    ///
-    /// Return
-    /// - `Some(true)` if `host` is in `white_list` (should be proxied)
-    /// - `Some(false)` if `host` is in `black_list` (should be bypassed)
-    /// - `None` if `host` doesn't match any rules
-    pub fn check_host_in_proxy_list(&self, host: &str) -> Option<bool> {
-        let host = Self::convert_to_ascii(host);
-        self.check_ascii_host_in_proxy_list(&host)
+    /// Check if there are no IP routing rules.
+    pub fn is_ip_empty(&self) -> bool {
+        self.proxy_rules.is_ip_empty() && self.direct_rules.is_ip_empty()
     }
 
-    /// Check if ASCII domain name is in proxy_list.
-    /// If so, it should be resolved from remote (for Android's DNS relay)
+    /// Check if there are no host routing rules.
+    pub fn is_host_empty(&self) -> bool {
+        self.proxy_rules.is_host_empty() && self.direct_rules.is_host_empty()
+    }
+
+    /// Decide how an ASCII domain should be handled.
     ///
-    /// Return
-    /// - `Some(true)` if `host` is in `white_list` (should be proxied)
-    /// - `Some(false)` if `host` is in `black_list` (should be bypassed)
-    /// - `None` if `host` doesn't match any rules
-    pub fn check_ascii_host_in_proxy_list(&self, host: &str) -> Option<bool> {
-        // Addresses in proxy_list will be proxied
-        if self.white_list.check_host_matched(host) {
-            return Some(true);
+    /// Returns the first matching action, or `None` if no rule matches.
+    /// The caller can then fall back to the default action.
+    pub fn decide_host(&self, host: &str) -> Option<TargetDecision> {
+        let host = Self::normalize_host(host);
+        if self.direct_rules.check_host_matched(&host) {
+            return Some(TargetDecision::Bypass);
         }
-        // Addresses in bypass_list will be bypassed
-        if self.black_list.check_host_matched(host) {
-            return Some(false);
+        if self.proxy_rules.check_host_matched(&host) {
+            return Some(TargetDecision::Proxy);
         }
         None
     }
 
-    /// If there are no IP rules
-    pub fn is_ip_empty(&self) -> bool {
-        match self.mode {
-            Mode::BlackList => self.black_list.is_ip_empty(),
-            Mode::WhiteList => self.white_list.is_ip_empty(),
-        }
-    }
-
-    /// If there are no domain name rules
-    pub fn is_host_empty(&self) -> bool {
-        self.black_list.is_host_empty() && self.white_list.is_host_empty()
-    }
-
-    /// Check if `IpAddr` should be proxied
-    pub fn check_ip_in_proxy_list(&self, ip: &IpAddr) -> bool {
-        match self.mode {
-            Mode::BlackList => !self.black_list.check_ip_matched(ip),
-            Mode::WhiteList => self.white_list.check_ip_matched(ip),
-        }
-    }
-
-    /// Default mode
+    /// Normalize a domain name for rule matching.
     ///
-    /// Default behavior for hosts that are not configured
-    /// - `true` - Proxied
-    /// - `false` - Bypassed
-    pub fn is_default_in_proxy_list(&self) -> bool {
-        match self.mode {
-            Mode::BlackList => true,
-            Mode::WhiteList => false,
-        }
-    }
-
-    /// Returns the ASCII representation a domain name,
-    /// if conversion fails returns original string
-    fn convert_to_ascii(host: &str) -> Cow<'_, str> {
+    /// Hostnames are converted to ASCII when possible, then folded to lower-case because
+    /// rule storage is case-insensitive.
+    fn normalize_host(host: &str) -> Cow<'_, str> {
         idna::domain_to_ascii(host)
             .map(|host| Cow::Owned(host.to_ascii_lowercase()))
             .unwrap_or_else(|_| Cow::Owned(host.to_ascii_lowercase()))
     }
 
-    /// Check if target address should be bypassed (for client)
-    ///
-    /// This function may perform a DNS resolution
-    pub async fn check_target_bypassed(&self, addr: &Address) -> bool {
+    /// Decide how a target should be handled.
+    pub async fn decide_target(&self, addr: &Address) -> TargetDecision {
         match *addr {
-            Address::SocketAddress(ref addr) => !self.check_ip_in_proxy_list(&addr.ip()),
-            // Resolve hostname and check the list
-            Address::DomainAddress(ref host, port) => {
-                if let Some(value) = self.check_host_in_proxy_list(host) {
-                    return !value;
+            Address::SocketAddress(ref addr) => {
+                if self.outbound_block.check_ip_matched(&addr.ip()) {
+                    return TargetDecision::Block;
                 }
-                if self.is_ip_empty() {
-                    return !self.is_default_in_proxy_list();
+                self.decide_socket_addr(&addr.ip())
+            }
+            Address::DomainAddress(ref host, port) => {
+                if self.outbound_block.check_host_matched(&Self::normalize_host(host)) {
+                    return TargetDecision::Block;
+                }
+                if let Some(value) = self.decide_host(host) {
+                    return value;
+                }
+                if self.proxy_rules.is_ip_empty() && self.direct_rules.is_ip_empty() {
+                    return self.default_action;
                 }
                 if let Ok(vaddr) = dns_resolve(host, port).await {
-                    for addr in vaddr {
-                        if !self.check_ip_in_proxy_list(&addr.ip()) {
-                            return true;
-                        }
+                    if vaddr.iter().any(|addr| self.outbound_block.check_ip_matched(&addr.ip())) {
+                        return TargetDecision::Block;
+                    }
+                    if let Some(decision) = self.decide_resolved_ips(&vaddr) {
+                        return decision;
                     }
                 }
-                false
+                self.default_action
             }
         }
     }
 
     /// Check if client address should be blocked (for server)
     pub fn check_client_blocked(&self, addr: &SocketAddr) -> bool {
-        match self.mode {
-            Mode::BlackList => {
-                // Only clients in black_list will be blocked
-                self.black_list.check_ip_matched(&addr.ip())
-            }
-            Mode::WhiteList => {
-                // Only clients in white_list will be proxied
-                !self.white_list.check_ip_matched(&addr.ip())
-            }
-        }
+        self.client_block.check_ip_matched(&addr.ip())
     }
 
     /// Check if outbound address is blocked (for server)
@@ -561,24 +553,29 @@ impl AccessControl {
     /// NOTE: `Address::DomainAddress` is only validated by regex rules,
     ///       resolved addresses are checked in the `lookup_outbound_then!` macro
     pub async fn check_outbound_blocked(&self, outbound: &Address) -> bool {
-        match outbound {
-            Address::SocketAddress(saddr) => self.outbound_block.check_ip_matched(&saddr.ip()),
-            Address::DomainAddress(host, port) => {
-                if self.outbound_block.check_host_matched(&Self::convert_to_ascii(host)) {
-                    return true;
-                }
+        self.decide_target(outbound).await.should_block()
+    }
 
-                if let Ok(vaddr) = dns_resolve(host, *port).await {
-                    for addr in vaddr {
-                        if self.outbound_block.check_ip_matched(&addr.ip()) {
-                            return true;
-                        }
-                    }
-                }
-
-                false
-            }
+    fn decide_socket_addr(&self, ip: &IpAddr) -> TargetDecision {
+        if self.direct_rules.check_ip_matched(ip) {
+            return TargetDecision::Bypass;
         }
+        if self.proxy_rules.check_ip_matched(ip) {
+            return TargetDecision::Proxy;
+        }
+
+        self.default_action
+    }
+
+    fn decide_resolved_ips(&self, addrs: &[SocketAddr]) -> Option<TargetDecision> {
+        if addrs.iter().any(|addr| self.direct_rules.check_ip_matched(&addr.ip())) {
+            return Some(TargetDecision::Bypass);
+        }
+        if addrs.iter().any(|addr| self.proxy_rules.check_ip_matched(&addr.ip())) {
+            return Some(TargetDecision::Proxy);
+        }
+
+        None
     }
 }
 
@@ -605,17 +602,68 @@ async fn test_dns_resolve() {
     assert!(addrs.is_err());
 }
 
-#[test]
-fn test_acl() {
-    let acl = AccessControl::load_from_file("shadowsocks.acl").unwrap();
+#[tokio::test]
+async fn test_acl() {
+    let acl_path = std::env::temp_dir().join(format!(
+        "socks-hub-acl-v2-{}-{}.acl",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+
+    std::fs::write(
+        &acl_path,
+        r#"
+[default proxy]
+[proxy]
+||google.com
+|sex.com
+[direct]
+127.0.0.1
+||baidu.com
+|example.com
+192.168.0.0/16
+[block]
+10.0.0.0/8
+"#,
+    )
+    .unwrap();
+
+    let acl = AccessControl::load_from_file(&acl_path).unwrap();
+    let _ = std::fs::remove_file(&acl_path);
 
     assert!(!acl.is_ip_empty());
     assert!(!acl.is_host_empty());
 
-    assert!(acl.check_host_in_proxy_list("www.google.com").unwrap());
-    assert!(!acl.check_host_in_proxy_list("www.baidu.com").unwrap_or_default());
-    assert!(acl.check_host_in_proxy_list("sex.com").unwrap());
-    assert!(acl.check_host_in_proxy_list("pornhub.com").unwrap_or_default());
-    assert!(!acl.check_host_in_proxy_list("example.com").unwrap_or_default());
-    assert!(acl.check_host_in_proxy_list("youtube.com").unwrap_or_default());
+    assert_eq!(acl.decide_host("www.google.com"), Some(TargetDecision::Proxy));
+    assert_eq!(acl.decide_host("www.baidu.com"), Some(TargetDecision::Bypass));
+    assert_eq!(acl.decide_host("sex.com"), Some(TargetDecision::Proxy));
+    assert_eq!(acl.decide_host("example.com"), Some(TargetDecision::Bypass));
+    assert_eq!(acl.decide_host("youtube.com"), None);
+
+    let proxy_addr = Address::SocketAddress(std::net::SocketAddr::from(([127, 0, 0, 1], 80)));
+    let direct_addr = Address::SocketAddress(std::net::SocketAddr::from(([192, 168, 1, 10], 80)));
+    let blocked_addr = Address::SocketAddress(std::net::SocketAddr::from(([10, 0, 0, 1], 80)));
+
+    assert_eq!(acl.decide_target(&proxy_addr).await, TargetDecision::Bypass);
+    assert_eq!(acl.decide_target(&direct_addr).await, TargetDecision::Bypass);
+    assert!(acl.check_outbound_blocked(&blocked_addr).await);
+
+    std::fs::write(
+        &acl_path,
+        r#"
+[default block]
+[proxy]
+||example.com
+"#,
+    )
+    .unwrap();
+
+    let acl = AccessControl::load_from_file(&acl_path).unwrap();
+    assert_eq!(
+        acl.decide_target(&Address::from(("unmatched.test", 80))).await,
+        TargetDecision::Block
+    );
 }

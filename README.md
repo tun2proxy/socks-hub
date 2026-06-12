@@ -52,6 +52,22 @@ If you want a SOCKS5 chain, pass `-m` for the middle hop and `-r` for the final 
 
 The C API exports the same option as the second argument of `socks_hub_run`; pass `NULL` to skip the middle hop.
 
+ACL files use a new explicit routing model:
+
+- `[default proxy]` , `[default direct]` or `[default block]` selects the fallback action.
+- `[proxy]` contains targets that must go through proxy.
+- `[direct]` contains targets that must connect directly.
+- `[outbound_block]` or `[block]` contains targets that must be blocked.
+- Rules are evaluated within a section in file order, and the first match wins.
+
+> Before running any test, generate the ACL file first:
+> ```shell
+> python3 genacl_proxy_gfw_bypass_china_ip.py --default-action block
+> ```
+> This generator builds the shared ACL file used by both client-side and server-side target routing,
+> so the generated `proxy` and `direct` sections stay aligned with the current ACL behavior.
+> Use `--default-action proxy`, `direct`, or `block` to choose the fallback behavior.
+
 ### Smoke tests
 
 By default they use `target/debug/socks-hub`. Set `SOCKS_HUB_BIN` if the binary lives somewhere else.
@@ -64,8 +80,3 @@ python3 scripts/smoke_udp_chain.py
 python3 scripts/smoke_tcp_direct.py
 python3 scripts/smoke_udp_direct.py
 ```
-
-> Before running any test, generate the ACL file first:
-> ```shell
-> python3 genacl_proxy_gfw_bypass_china_ip.py
-> ```
