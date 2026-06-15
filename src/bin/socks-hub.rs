@@ -29,7 +29,7 @@ async fn main() -> Result<(), BoxError> {
 
     let mut role = config.listen_proxy_role.clone();
     let cb = move |addr: SocketAddr| {
-        role.addr = addr;
+        role.addr = addr.into();
         log::info!("Listening on {role}");
     };
 

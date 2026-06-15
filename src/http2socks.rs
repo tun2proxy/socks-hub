@@ -1,4 +1,4 @@
-use crate::{BoxError, CONNECT_TIMEOUT, Config, Credentials, TokioIo, std_io_error_other};
+use crate::{BoxError, CONNECT_TIMEOUT, Config, TokioIo, std_io_error_other};
 use bytes::Bytes;
 use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::{
@@ -7,7 +7,7 @@ use hyper::{
     service::service_fn,
     upgrade::Upgraded,
 };
-use socks5_impl::protocol::{Address, UserKey};
+use socks5_impl::protocol::{Address, ProxyParameters, UserKey};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
@@ -37,7 +37,7 @@ where
             })
     });
 
-    let listen_addr = config.listen_proxy_role.addr;
+    let listen_addr: SocketAddr = config.listen_proxy_role.addr.clone().try_into()?;
 
     let listener = TcpListener::bind(listen_addr).await?;
 
@@ -95,11 +95,9 @@ async fn proxy(
     //
     log::trace!("req: {req:?}");
 
-    let server = config.remote_server.addr;
-    let credentials = config.get_credentials();
-    let s5_auth = config.get_s5_credentials().try_into().ok();
-    let middle_server = config.middle_server.as_ref().map(|proxy| proxy.addr);
-    let middle_s5_auth = config.get_middle_s5_credentials().try_into().ok();
+    let server = config.remote_server.clone();
+    let credentials = config.get_listen_credentials();
+    let middle_server = config.middle_server.clone();
 
     fn get_proxy_authorization(req: &Request<hyper::body::Incoming>) -> (Option<HeaderName>, Option<&HeaderValue>) {
         if let Some(header) = req.headers().get(AUTHORIZATION) {
@@ -147,7 +145,7 @@ async fn proxy(
             tokio::task::spawn(async move {
                 match hyper::upgrade::on(req).await {
                     Ok(upgraded) => {
-                        if let Err(e) = tunnel(upgraded, s5addr, server, s5_auth, middle_server, middle_s5_auth).await {
+                        if let Err(e) = tunnel(upgraded, s5addr, server, middle_server).await {
                             log::error!("server io error: {e}");
                         };
                     }
@@ -190,7 +188,7 @@ async fn proxy(
         }
 
         log::debug!("connect to SOCKS5 proxy server {server:?}");
-        let stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &s5addr, s5_auth, middle_server, middle_s5_auth).await?;
+        let stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &s5addr, middle_server).await?;
         proxy_internal(stream, req).await
     }
 }
@@ -225,14 +223,7 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
 
 // Create a TCP connection to host:port, build a tunnel between the connection and
 // the upgraded connection
-async fn tunnel(
-    upgraded: Upgraded,
-    dst: Address,
-    server: SocketAddr,
-    auth: Option<UserKey>,
-    middle_server: Option<SocketAddr>,
-    middle_s5_auth: Option<UserKey>,
-) -> std::io::Result<()> {
+async fn tunnel(upgraded: Upgraded, dst: Address, server: ProxyParameters, middle_server: Option<ProxyParameters>) -> std::io::Result<()> {
     #[cfg(feature = "acl")]
     {
         let mut must_proxied = true;
@@ -258,25 +249,25 @@ async fn tunnel(
     }
 
     let mut upgraded = TokioIo::new(upgraded);
-    let mut server = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, auth, middle_server, middle_s5_auth).await?;
+    let mut server = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, middle_server).await?;
     let (from_client, from_server) = tokio::io::copy_bidirectional(&mut upgraded, &mut server).await?;
     log::debug!("client wrote {from_client} bytes and received {from_server} bytes");
     Ok(())
 }
 
-fn verify_basic_authorization(credentials: &Credentials, header_value: Option<&HeaderValue>) -> bool {
-    if header_value.is_none() && credentials.is_empty() {
+fn verify_basic_authorization(credentials: &UserKey, header_value: Option<&HeaderValue>) -> bool {
+    if header_value.is_none() && credentials.to_string().is_empty() {
         return true;
     }
     header_value
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Basic "))
         .and_then(|v| base64easy::decode(v, base64easy::EngineKind::Standard).ok())
-        .is_some_and(|v| v == credentials.to_vec())
+        .is_some_and(|v| v == credentials.to_string().as_bytes().to_vec())
 }
 
-fn is_proxy_authorized(credentials: &Credentials, header_value: Option<&HeaderValue>) -> bool {
-    credentials.is_empty() || verify_basic_authorization(credentials, header_value)
+fn is_proxy_authorized(credentials: &UserKey, header_value: Option<&HeaderValue>) -> bool {
+    credentials.to_string().is_empty() || verify_basic_authorization(credentials, header_value)
 }
 
 #[cfg(test)]
@@ -285,13 +276,13 @@ mod tests {
 
     #[test]
     fn connect_requires_proxy_auth_when_credentials_are_configured() {
-        let credentials = Credentials::new("alice", "secret");
+        let credentials = UserKey::new("alice", "secret");
         assert!(!is_proxy_authorized(&credentials, None));
     }
 
     #[test]
     fn connect_allows_missing_proxy_auth_when_no_credentials_are_configured() {
-        let credentials = Credentials::default();
+        let credentials = UserKey::default();
         assert!(is_proxy_authorized(&credentials, None));
     }
 }

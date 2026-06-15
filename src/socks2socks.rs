@@ -1,6 +1,6 @@
 use crate::{BoxError, CONNECT_TIMEOUT, Config, Result};
 use socks5_impl::{
-    protocol::{Address, Reply, UdpHeader, UserKey},
+    protocol::{Address, ProxyParameters, Reply, UdpHeader},
     server::{
         AssociatedUdpSocket, ClientConnection, Connect, IncomingConnection, Server, UdpAssociate, auth,
         connection::{associate, connect},
@@ -35,54 +35,29 @@ where
             })
     });
 
-    let listen_addr = config.listen_proxy_role.addr;
-    let server_addr = config.remote_server.addr;
-    let credentials = config.get_credentials();
-    let s5_auth = config.get_s5_credentials().try_into().ok();
-    let middle_server = config.middle_server.as_ref().map(|proxy| proxy.addr);
-    let middle_s5_auth = config.get_middle_s5_credentials().try_into().ok();
-    match (credentials.username, credentials.password) {
-        (Some(username), Some(password)) => {
-            let auth = Arc::new(auth::UserKeyAuth::new(&username, &password));
-            main_loop(
-                auth,
-                listen_addr,
-                server_addr,
-                s5_auth,
-                middle_server,
-                middle_s5_auth,
-                cancel_token,
-                callback,
-            )
-            .await?;
+    let listen_addr: SocketAddr = config.listen_proxy_role.addr.clone().try_into()?;
+    let server_addr = config.remote_server.clone();
+    let credentials = config.get_listen_credentials();
+    let middle_server = config.middle_server.clone();
+    match credentials.to_string().is_empty() {
+        false => {
+            let auth = Arc::new(auth::UserKeyAuth::new(&credentials.username, &credentials.password));
+            main_loop(auth, listen_addr, server_addr, middle_server, cancel_token, callback).await?;
         }
-        _ => {
+        true => {
             let auth = Arc::new(auth::NoAuth);
-            main_loop(
-                auth,
-                listen_addr,
-                server_addr,
-                s5_auth,
-                middle_server,
-                middle_s5_auth,
-                cancel_token,
-                callback,
-            )
-            .await?;
+            main_loop(auth, listen_addr, server_addr, middle_server, cancel_token, callback).await?;
         }
     }
 
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn main_loop<S, F>(
     auth: auth::AuthAdaptor<S>,
     listen_addr: SocketAddr,
-    server: SocketAddr,
-    s5_auth: Option<UserKey>,
-    middle_server: Option<SocketAddr>,
-    middle_s5_auth: Option<UserKey>,
+    server: ProxyParameters,
+    middle_server: Option<ProxyParameters>,
     cancel_token: tokio_util::sync::CancellationToken,
     callback: Option<F>,
 ) -> Result<()>
@@ -104,10 +79,10 @@ where
             }
             result = listener.accept() => {
                 let (conn, _) = result?;
-                let s5_auth = s5_auth.clone();
-                let middle_s5_auth = middle_s5_auth.clone();
+                let server = server.clone();
+                let middle_server = middle_server.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = handle(conn, server, s5_auth, middle_server, middle_s5_auth).await {
+                    if let Err(err) = handle(conn, server,  middle_server).await {
                         log::error!("{err}");
                     }
                 });
@@ -117,13 +92,7 @@ where
     Ok(())
 }
 
-async fn handle<S>(
-    conn: IncomingConnection<S>,
-    server: SocketAddr,
-    s5_auth: Option<UserKey>,
-    middle_server: Option<SocketAddr>,
-    middle_s5_auth: Option<UserKey>,
-) -> Result<()>
+async fn handle<S>(conn: IncomingConnection<S>, server: ProxyParameters, middle_server: Option<ProxyParameters>) -> Result<()>
 where
     S: Send + Sync + 'static,
 {
@@ -140,14 +109,14 @@ where
 
     match conn.wait_request().await? {
         ClientConnection::UdpAssociate(associate, _) => {
-            handle_s5_upd_associate(associate, server, s5_auth, middle_server, middle_s5_auth).await?;
+            handle_s5_upd_associate(associate, server, middle_server).await?;
         }
         ClientConnection::Bind(bind, _) => {
             let mut conn = bind.reply(Reply::CommandNotSupported, Address::unspecified()).await?;
             conn.shutdown().await?;
         }
         ClientConnection::Connect(connect, dst) => {
-            handle_s5_client_connection(connect, dst, server, s5_auth, middle_server, middle_s5_auth).await?;
+            handle_s5_client_connection(connect, dst, server, middle_server).await?;
         }
     }
 
@@ -157,10 +126,8 @@ where
 async fn handle_s5_client_connection(
     connect: Connect<connect::NeedReply>,
     dst: Address,
-    server: SocketAddr,
-    s5_auth: Option<UserKey>,
-    middle_server: Option<SocketAddr>,
-    middle_s5_auth: Option<UserKey>,
+    server: ProxyParameters,
+    middle_server: Option<ProxyParameters>,
 ) -> Result<()> {
     #[cfg(feature = "acl")]
     {
@@ -188,7 +155,7 @@ async fn handle_s5_client_connection(
         }
     }
 
-    let mut stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, s5_auth, middle_server, middle_s5_auth).await?;
+    let mut stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, middle_server).await?;
     let mut conn = connect.reply(Reply::Succeeded, Address::unspecified()).await?;
     log::trace!("{} -> {}", conn.peer_addr()?, dst);
 
@@ -199,10 +166,8 @@ async fn handle_s5_client_connection(
 
 pub(crate) async fn handle_s5_upd_associate(
     associate: UdpAssociate<associate::NeedReply>,
-    server: SocketAddr,
-    s5_auth: Option<UserKey>,
-    middle_server: Option<SocketAddr>,
-    middle_s5_auth: Option<UserKey>,
+    server: ProxyParameters,
+    middle_server: Option<ProxyParameters>,
 ) -> Result<()> {
     // listen on a random port
     let listen_ip = associate.local_addr()?.ip();
@@ -225,7 +190,7 @@ pub(crate) async fn handle_s5_upd_associate(
 
     let incoming_addr = std::sync::OnceLock::new();
 
-    let s5_udp_client = crate::create_s5_udp_client(server, CONNECT_TIMEOUT, s5_auth, middle_server, middle_s5_auth).await?;
+    let s5_udp_client = crate::create_s5_udp_client(server, CONNECT_TIMEOUT, middle_server).await?;
 
     let res = loop {
         tokio::select! {
