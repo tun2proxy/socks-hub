@@ -73,7 +73,7 @@ regex = { version = "1.12.4", optional = true }
 serde = { version = "1.0.228", optional = true }
 serde_derive = { version = "1.0.228", optional = true }
 serde_json = { version = "1.0.150", optional = true }
-socks5-impl = { version = "0.8.6", default-features = false, features = [
+socks5-impl = { version = "0.9.0", default-features = false, features = [
     "client",
     "server",
     "serde",
