@@ -39,22 +39,17 @@ where
     let server_addr = config.remote_server.clone();
     let credentials = config.get_listen_credentials();
     let middle_server = config.middle_server.clone();
-    match credentials.to_string().is_empty() {
-        false => {
-            let auth = Arc::new(auth::UserKeyAuth::new(&credentials.username, &credentials.password));
-            main_loop(auth, listen_addr, server_addr, middle_server, cancel_token, callback).await?;
-        }
-        true => {
-            let auth = Arc::new(auth::NoAuth);
-            main_loop(auth, listen_addr, server_addr, middle_server, cancel_token, callback).await?;
-        }
-    }
+    let auth: auth::AuthAdaptor = match credentials.to_string().is_empty() {
+        false => Arc::new(auth::UserKeyAuth::from(credentials)),
+        true => Arc::new(auth::NoAuth),
+    };
+    main_loop(auth, listen_addr, server_addr, middle_server, cancel_token, callback).await?;
 
     Ok(())
 }
 
-async fn main_loop<S, F>(
-    auth: auth::AuthAdaptor<S>,
+async fn main_loop<F>(
+    auth: auth::AuthAdaptor,
     listen_addr: SocketAddr,
     server: ProxyParameters,
     middle_server: Option<ProxyParameters>,
@@ -62,7 +57,6 @@ async fn main_loop<S, F>(
     callback: Option<F>,
 ) -> Result<()>
 where
-    S: Send + Sync + 'static,
     F: FnOnce(SocketAddr) + Send + Sync + 'static,
 {
     let listener = Server::bind(listen_addr, auth).await?;
@@ -92,20 +86,8 @@ where
     Ok(())
 }
 
-async fn handle<S>(conn: IncomingConnection<S>, server: ProxyParameters, middle_server: Option<ProxyParameters>) -> Result<()>
-where
-    S: Send + Sync + 'static,
-{
-    let (conn, res) = conn.authenticate().await?;
-
-    let res = &res as &dyn std::any::Any;
-    if let Some(res) = res.downcast_ref::<std::io::Result<bool>>() {
-        let res = *res.as_ref().map_err(|err| err.to_string())?;
-        if !res {
-            log::info!("authentication failed");
-            return Ok(());
-        }
-    }
+async fn handle(conn: IncomingConnection, server: ProxyParameters, middle_server: Option<ProxyParameters>) -> Result<()> {
+    let conn = conn.authenticate().await?;
 
     match conn.wait_request().await? {
         ClientConnection::UdpAssociate(associate, _) => {
