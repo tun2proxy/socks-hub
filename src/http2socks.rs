@@ -3,7 +3,7 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::{
     Method, Request, Response,
-    header::{AUTHORIZATION, HeaderName, HeaderValue, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION},
+    header::{CONNECTION, HeaderMap, HeaderValue, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION},
     service::service_fn,
     upgrade::Upgraded,
 };
@@ -69,7 +69,7 @@ where
     Ok(())
 }
 
-async fn build_http_service(stream: tokio::net::TcpStream, config: std::sync::Arc<Config>) -> Result<(), BoxError> {
+pub async fn build_http_service(stream: tokio::net::TcpStream, config: std::sync::Arc<Config>) -> Result<(), BoxError> {
     let io = TokioIo::new(stream);
     hyper::server::conn::http1::Builder::new()
         .preserve_header_case(true)
@@ -99,17 +99,7 @@ async fn proxy(
     let credentials = config.get_listen_credentials();
     let middle_server = config.middle_server.clone();
 
-    fn get_proxy_authorization(req: &Request<hyper::body::Incoming>) -> (Option<HeaderName>, Option<&HeaderValue>) {
-        if let Some(header) = req.headers().get(AUTHORIZATION) {
-            (Some(AUTHORIZATION), Some(header))
-        } else if let Some(header) = req.headers().get(PROXY_AUTHORIZATION) {
-            (Some(PROXY_AUTHORIZATION), Some(header))
-        } else {
-            (None, None)
-        }
-    }
-
-    let (auth_header, auth_value) = get_proxy_authorization(&req);
+    let auth_value = req.headers().get(PROXY_AUTHORIZATION);
     // Some clients may omit proxy auth on the first CONNECT request and retry after a 407 challenge.
     if !is_proxy_authorized(&credentials, auth_value) {
         log::warn!("authorization fail");
@@ -119,8 +109,8 @@ async fn proxy(
             .insert(PROXY_AUTHENTICATE, HeaderValue::from_static("Basic realm=\"socks-hub\""));
         return Ok(resp);
     }
-    if let Some(auth_header) = auth_header {
-        let _ = req.headers_mut().remove(auth_header);
+    if auth_value.is_some() {
+        let _ = req.headers_mut().remove(PROXY_AUTHORIZATION);
     }
 
     if Method::CONNECT == req.method() {
@@ -160,6 +150,7 @@ async fn proxy(
             Ok(resp)
         }
     } else {
+        remove_hop_by_hop_headers(req.headers_mut());
         let host = req.uri().host().unwrap_or_default();
         let port = req.uri().port_u16().unwrap_or(HTTP_DEFAULT_PORT);
         let s5addr = Address::from((host, port));
@@ -221,6 +212,36 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     http_body_util::Full::new(chunk.into()).map_err(|never| match never {}).boxed()
 }
 
+fn remove_hop_by_hop_headers(headers: &mut HeaderMap<HeaderValue>) {
+    let connection_values = headers
+        .get(CONNECTION)
+        .and_then(|connection| connection.to_str().ok())
+        .map(|connection_value| connection_value.to_owned());
+
+    if let Some(connection_value) = connection_values {
+        for name in connection_value.split(',') {
+            let name = name.trim();
+            if !name.is_empty() {
+                headers.remove(name);
+            }
+        }
+    }
+
+    for header_name in &[
+        "connection",
+        "proxy-authorization",
+        "proxy-authenticate",
+        "proxy-connection",
+        "keep-alive",
+        "transfer-encoding",
+        "te",
+        "trailer",
+        "upgrade",
+    ] {
+        headers.remove(*header_name);
+    }
+}
+
 // Create a TCP connection to host:port, build a tunnel between the connection and
 // the upgraded connection
 async fn tunnel(upgraded: Upgraded, dst: Address, server: ProxyParameters, middle_server: Option<ProxyParameters>) -> std::io::Result<()> {
@@ -261,8 +282,16 @@ fn verify_basic_authorization(credentials: &UserKey, header_value: Option<&Heade
     }
     header_value
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Basic "))
-        .and_then(|v| base64easy::decode(v, base64easy::EngineKind::Standard).ok())
+        .and_then(|s| {
+            let s = s.trim();
+            let mut parts = s.splitn(2, ' ');
+            let scheme = parts.next()?;
+            let encoded = parts.next()?.trim();
+            if !scheme.eq_ignore_ascii_case("Basic") {
+                return None;
+            }
+            base64easy::decode(encoded, base64easy::EngineKind::Standard).ok()
+        })
         .is_some_and(|v| v == credentials.to_string().as_bytes().to_vec())
 }
 
@@ -273,6 +302,7 @@ fn is_proxy_authorized(credentials: &UserKey, header_value: Option<&HeaderValue>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hyper::header::{AUTHORIZATION, PROXY_AUTHORIZATION, UPGRADE};
 
     #[test]
     fn connect_requires_proxy_auth_when_credentials_are_configured() {
@@ -284,5 +314,35 @@ mod tests {
     fn connect_allows_missing_proxy_auth_when_no_credentials_are_configured() {
         let credentials = UserKey::default();
         assert!(is_proxy_authorized(&credentials, None));
+    }
+
+    #[test]
+    fn proxy_authorization_header_is_used_for_proxy_auth() {
+        let credentials = UserKey::new("alice", "secret");
+        let value = HeaderValue::from_str("Basic YWxpY2U6c2VjcmV0").unwrap();
+        assert!(is_proxy_authorized(&credentials, Some(&value)));
+    }
+
+    #[test]
+    fn authorization_header_is_not_used_for_proxy_auth() {
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Basic YWxpY2U6c2VjcmV0"));
+        assert!(headers.get(PROXY_AUTHORIZATION).is_none());
+    }
+
+    #[test]
+    fn remove_hop_by_hop_headers_strips_connection_values() {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONNECTION, HeaderValue::from_static("keep-alive, Upgrade"));
+        headers.insert("keep-alive", HeaderValue::from_static("timeout=5, max=1000"));
+        headers.insert(UPGRADE, HeaderValue::from_static("websocket"));
+        headers.insert(PROXY_AUTHORIZATION, HeaderValue::from_static("Basic test"));
+
+        remove_hop_by_hop_headers(&mut headers);
+
+        assert!(headers.get(CONNECTION).is_none());
+        assert!(headers.get("keep-alive").is_none());
+        assert!(headers.get(UPGRADE).is_none());
+        assert!(headers.get(PROXY_AUTHORIZATION).is_none());
     }
 }
