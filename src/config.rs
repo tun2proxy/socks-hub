@@ -6,9 +6,10 @@ use socks5_impl::protocol::{ProxyParameters, UserKey};
 #[command(author, version, about = "SOCKS5 hub for downstreams proxy of HTTP or SOCKS5.", long_about = None)]
 pub struct Config {
     /// Source proxy role, URL in the form proto://[username[:password]@]host:port,
-    /// where proto is one of socks5, http.
+    /// where proto is one of socks5, http, or none.
+    /// If proto is none, the program will detect the protocol automatically.
     /// Username and password are encoded in percent encoding. For example:
-    /// http://myname:pass%40word@127.0.0.1:1080
+    /// none://myname:pass%40word@127.0.0.1:1080
     #[arg(short, long, value_parser = |s: &str| ProxyParameters::try_from(s), value_name = "URL")]
     pub listen_proxy_role: ProxyParameters,
 

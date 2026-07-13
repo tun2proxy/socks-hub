@@ -1,6 +1,8 @@
+use crate::std_io_error_other;
 use crate::{BoxError, CONNECT_TIMEOUT, Config, Result};
+use socks5_impl::protocol::{Address, AsyncStreamOperation, ProxyParameters, Reply, Response as SocksResponse};
 use socks5_impl::{
-    protocol::{Address, ProxyParameters, Reply, UdpHeader},
+    protocol::UdpHeader,
     server::{
         AssociatedUdpSocket, ClientConnection, Connect, IncomingConnection, Server, UdpAssociate, auth,
         connection::{associate, connect},
@@ -8,6 +10,7 @@ use socks5_impl::{
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::UdpSocket;
+use tokio::{io::AsyncReadExt, net::TcpStream};
 
 #[cfg(feature = "acl")]
 use crate::acl::TargetDecision;
@@ -86,7 +89,7 @@ where
     Ok(())
 }
 
-async fn handle(conn: IncomingConnection, server: ProxyParameters, middle_server: Option<ProxyParameters>) -> Result<()> {
+pub(crate) async fn handle(conn: IncomingConnection, server: ProxyParameters, middle_server: Option<ProxyParameters>) -> Result<()> {
     let conn = conn.authenticate().await?;
 
     match conn.wait_request().await? {
@@ -170,11 +173,28 @@ pub(crate) async fn handle_s5_upd_associate(
     let buf_size = MAX_UDP_RELAY_PACKET_SIZE - UdpHeader::max_serialized_len();
     let listen_udp = Arc::new(AssociatedUdpSocket::from((listen_udp, buf_size)));
 
-    let incoming_addr = std::sync::OnceLock::new();
-
     let s5_udp_client = crate::create_s5_udp_client(server, CONNECT_TIMEOUT, middle_server).await?;
 
-    let res = loop {
+    let res = run_udp_associate_relay(listen_udp, s5_udp_client, &mut reply_listener, listen_addr).await;
+
+    reply_listener.shutdown().await?;
+
+    res
+}
+
+pub(crate) async fn run_udp_associate_relay<S>(
+    listen_udp: Arc<AssociatedUdpSocket>,
+    s5_udp_client: socks5_impl::client::SocksUdpClient,
+    stream: &mut S,
+    _listen_addr: SocketAddr,
+) -> Result<()>
+where
+    S: tokio::io::AsyncRead + Unpin + Send,
+{
+    let incoming_addr = std::sync::OnceLock::new();
+    let mut close_buf = [0u8; 1];
+
+    loop {
         tokio::select! {
             res = async {
                 let buf_size = MAX_UDP_RELAY_PACKET_SIZE - UdpHeader::max_serialized_len();
@@ -207,14 +227,43 @@ pub(crate) async fn handle_s5_upd_associate(
                     break res;
                 }
             },
-            _ = reply_listener.wait_until_closed() => {
-                log::trace!("[UDP] {listen_addr} listener closed");
-                break Ok::<_, BoxError>(());
-            },
+            res = stream.read(&mut close_buf) => {
+                if let Ok(0) = res { break Ok(()); }
+                if let Err(err) = res { break Err(err.into()); }
+            }
         };
-    };
+    }
+}
 
-    reply_listener.shutdown().await?;
+pub async fn handle_socks5_connect(mut stream: TcpStream, dst: Address, remote_server: ProxyParameters) -> Result<(), BoxError> {
+    #[cfg(feature = "acl")]
+    {
+        if let Some(Some(acl)) = ACL_CENTER.get() {
+            match acl.decide_target(&dst).await {
+                TargetDecision::Proxy => {}
+                TargetDecision::Bypass => {
+                    use std::net::ToSocketAddrs;
+                    let addr = dst.to_socket_addrs()?.next().ok_or(std_io_error_other("no address found"))?;
+                    let mut server = tokio::net::TcpStream::connect(addr).await?;
+                    let resp = SocksResponse::new(Reply::Succeeded, Address::unspecified());
+                    resp.write_to_async_stream(&mut stream).await.map_err(std_io_error_other)?;
+                    tokio::io::copy_bidirectional(&mut stream, &mut server).await?;
+                    return Ok(());
+                }
+                TargetDecision::Block => {
+                    let resp = SocksResponse::new(Reply::ConnectionNotAllowed, Address::unspecified());
+                    resp.write_to_async_stream(&mut stream).await.map_err(std_io_error_other)?;
+                    use tokio::io::AsyncWriteExt;
+                    stream.shutdown().await.map_err(std_io_error_other)?;
+                    return Ok(());
+                }
+            }
+        }
+    }
 
-    res
+    let resp = SocksResponse::new(Reply::Succeeded, Address::unspecified());
+    resp.write_to_async_stream(&mut stream).await.map_err(std_io_error_other)?;
+    let mut server = crate::create_s5_connect(remote_server, CONNECT_TIMEOUT, &dst, None).await?;
+    tokio::io::copy_bidirectional(&mut stream, &mut server).await?;
+    Ok(())
 }
