@@ -3,11 +3,11 @@ name: Push or PR
 on:
   push:
     branches:
-      - '**'
-    tags-ignore: ['*']
+      - "**"
+    tags-ignore: ["*"]
   pull_request:
     branches:
-      - '**'
+      - "**"
   workflow_dispatch:
 
 env:
@@ -23,19 +23,26 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@stable
-      with:
-        components: clippy, rustfmt
-    - name: rustfmt
-      run: cargo fmt --all -- --check
-    - name: check
-      run: cargo check --verbose
-    - name: clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
-    - name: Build
-      run: cargo build --verbose --examples --tests --all-features
-    - name: Test
-      run: |
-        python3 genacl_proxy_gfw_bypass_china_ip.py
-        cargo test --all-features --verbose
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+      - name: check
+        run: cargo check --verbose
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Build
+        run: cargo build --verbose --examples --tests --all-features
+      - name: Test
+        run: |
+          python3 genacl_proxy_gfw_bypass_china_ip.py
+          cargo test --all-features --verbose
+      - name: Smoke tests
+        if: runner.os != 'Windows'
+        run: |
+          python3 scripts/smoke_tcp_chain.py
+          python3 scripts/smoke_tcp_direct.py
+          python3 scripts/smoke_udp_chain.py
+          python3 scripts/smoke_udp_direct.py
