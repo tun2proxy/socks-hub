@@ -40,7 +40,9 @@ def socks_hub_binary() -> Path:
     override = os.environ.get("SOCKS_HUB_BIN")
     if override:
         return Path(override)
-    return repo_root() / "target" / "debug" / "socks-hub"
+
+    binary_name = "socks-hub.exe" if os.name == "nt" else "socks-hub"
+    return repo_root() / "target" / "debug" / binary_name
 
 
 def recv_exact(sock: socket.socket, size: int) -> bytes:

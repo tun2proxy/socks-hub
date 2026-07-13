@@ -3,11 +3,11 @@ name: Push or PR
 on:
   push:
     branches:
-      - '**'
-    tags-ignore: ['*']
+      - "**"
+    tags-ignore: ["*"]
   pull_request:
     branches:
-      - '**'
+      - "**"
   workflow_dispatch:
 
 env:
@@ -17,25 +17,39 @@ jobs:
   build_n_test:
     if: github.ref_type != 'tag'
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@stable
-      with:
-        components: clippy, rustfmt
-    - name: rustfmt
-      run: cargo fmt --all -- --check
-    - name: check
-      run: cargo check --verbose
-    - name: clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
-    - name: Build
-      run: cargo build --verbose --examples --tests --all-features
-    - name: Test
-      run: |
-        python3 genacl_proxy_gfw_bypass_china_ip.py
-        cargo test --all-features --verbose
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: rustfmt
+        if: ${{ !cancelled() }}
+        run: cargo fmt --all -- --check
+      - name: check
+        if: ${{ !cancelled() }}
+        run: cargo check --verbose
+      - name: clippy
+        if: ${{ !cancelled() }}
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Build
+        if: ${{ !cancelled() }}
+        run: cargo build --verbose --examples --tests --all-features
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: |
+          python3 genacl_proxy_gfw_bypass_china_ip.py
+          cargo test --all-features --verbose
+      - name: Smoke tests
+        if: ${{ !cancelled() }}
+        run: |
+          cargo build --verbose --bin socks-hub --all-features
+          python3 scripts/smoke_tcp_chain.py
+          python3 scripts/smoke_tcp_direct.py
+          python3 scripts/smoke_udp_chain.py
+          python3 scripts/smoke_udp_direct.py
