@@ -36,7 +36,7 @@ mod socks2socks;
 #[cfg(feature = "httpproxy")]
 mod httpproxy;
 #[cfg(feature = "httpproxy")]
-pub use httpproxy::run_http_service;
+pub use httpproxy::{BoxedConnectFuture, BoxedStream, HttpConnector, TokioStream, run_http_service};
 
 #[cfg(feature = "sockshub")]
 mod api;
