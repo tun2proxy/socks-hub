@@ -92,7 +92,7 @@ async fn proxy(
                 match hyper::upgrade::on(req).await {
                     Ok(upgraded) => {
                         if let Err(e) = tunnel(upgraded, up_addr, connector).await {
-                            log::error!("server io error: {e}");
+                            log::debug!("server io error: {e}");
                         };
                     }
                     Err(e) => log::error!("upgrade error: {e}"),
