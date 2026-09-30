@@ -38,7 +38,9 @@ where
             })
     });
 
-    let listen_addr: SocketAddr = config.listen_proxy_role.addr.clone().try_into()?;
+    let listen_addr: SocketAddr = crate::required_proxy_address(&config.listen_proxy_role, "listen proxy")?
+        .clone()
+        .try_into()?;
     let server_addr = config.remote_server.clone();
     let credentials = config.get_listen_credentials();
     let middle_server = config.middle_server.clone();

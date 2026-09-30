@@ -54,9 +54,9 @@ httpproxy = [
 [dependencies]
 base64easy = { version = "0.1.7", optional = true }
 bytes = { version = "1.12.1", optional = true }
-cfg-if = "1.0.4"
+cfg-if = "1.0.5"
 chrono = { version = "0.4.45", optional = true }
-clap = { version = "4.6.1", features = [
+clap = { version = "4.6.7", features = [
     "derive",
     "wrap_help",
 ], optional = true }
@@ -66,23 +66,23 @@ ctrlc2 = { version = "4.0.0", features = [
 ], optional = true }
 dotenvy = { version = "0.15.7", optional = true }
 env_logger = { version = "0.11.11", optional = true }
-http-body-util = { version = "0.1.4", optional = true }
-hyper = { version = "1.10.1", features = ["full"], optional = true }
+http-body-util = { version = "0.1.5", optional = true }
+hyper = { version = "1.11.1", features = ["full"], optional = true }
 idna = { version = "1.1.0", optional = true }
-ipnet = { version = "2.12.0", optional = true }
+ipnet = { version = "2.12.2", optional = true }
 iprange = { version = "0.6.7", optional = true }
-log = { version = "0.4.33", optional = true }
+log = { version = "0.4.34", optional = true, features = ["serde"] }
 percent-encoding = { version = "2.3.2", optional = true }
 pin-project-lite = { version = "0.2.17", optional = true }
-regex = { version = "1.13.0", optional = true }
-serde = { version = "1.0.228", optional = true }
-serde_derive = { version = "1.0.228", optional = true }
-serde_json = { version = "1.0.150", optional = true }
-socks5-impl = { version = "0.9.4", default-features = false, features = [
+regex = { version = "1.13.1", optional = true }
+serde = { version = "1.0.229", optional = true }
+serde_derive = { version = "1.0.229", optional = true }
+serde_json = { version = "1.0.151", optional = true }
+socks5-impl = { version = "0.9.8", default-features = false, features = [
     "client",
     "server",
     "serde",
 ], optional = true }
-tokio = { version = "1.52.3", features = ["full"], optional = true }
-tokio-util = { version = "0.7.18", optional = true }
+tokio = { version = "1.53.1", features = ["full"], optional = true }
+tokio-util = { version = "0.7.19", optional = true }
 url = { version = "2.5.8", optional = true }

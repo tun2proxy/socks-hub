@@ -15,7 +15,10 @@ cfg_if::cfg_if! {
 #[cfg(feature = "sockshub")]
 mod config;
 #[cfg(feature = "sockshub")]
-pub use config::{ArgVerbosity, Config};
+pub use config::Config;
+
+#[cfg(feature = "sockshub")]
+pub use log::LevelFilter;
 
 #[cfg(feature = "httpproxy")]
 mod tokiort;
@@ -51,6 +54,14 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 pub type Result<T, E = BoxError> = std::result::Result<T, E>;
 
 #[cfg(feature = "sockshub")]
+pub(crate) fn required_proxy_address<'a>(proxy: &'a ProxyParameters, name: &str) -> std::io::Result<&'a Address> {
+    proxy
+        .addr
+        .as_ref()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{name} address is required")))
+}
+
+#[cfg(feature = "sockshub")]
 pub async fn main_entry<F>(config: &Config, cancel_token: tokio_util::sync::CancellationToken, callback: Option<F>) -> Result<(), BoxError>
 where
     F: FnOnce(std::net::SocketAddr) + Send + Sync + 'static,
@@ -66,8 +77,8 @@ where
     match config.listen_proxy_role.proxy_type {
         ProxyType::Http => http2socks::main_entry(config, cancel_token, callback).await,
         ProxyType::Socks5 => socks2socks::main_entry(config, cancel_token, callback).await,
-        ProxyType::None => mixed_main_entry(config, cancel_token, callback).await,
-        _ => Err("listen proxy must be http, socks5, or none (mixed)".into()),
+        ProxyType::Mixed => mixed_main_entry(config, cancel_token, callback).await,
+        _ => Err("listen proxy must be http, socks5, or mixed".into()),
     }
 }
 
@@ -80,7 +91,9 @@ pub async fn mixed_main_entry<F>(
 where
     F: FnOnce(std::net::SocketAddr) + Send + Sync + 'static,
 {
-    let listen_addr: std::net::SocketAddr = config.listen_proxy_role.addr.clone().try_into()?;
+    let listen_addr: std::net::SocketAddr = required_proxy_address(&config.listen_proxy_role, "listen proxy")?
+        .clone()
+        .try_into()?;
 
     let listener = tokio::net::TcpListener::bind(listen_addr).await?;
 
@@ -223,16 +236,17 @@ async fn connect_proxy_stream(
     middle_server: Option<ProxyParameters>,
 ) -> std::io::Result<tokio::io::BufStream<tokio::net::TcpStream>> {
     let stream = if let Some(middle_server) = middle_server {
-        let middle_addr: std::net::SocketAddr = middle_server.addr.try_into()?;
+        let middle_addr: std::net::SocketAddr = required_proxy_address(&middle_server, "middle proxy")?.clone().try_into()?;
         let stream = tokio::time::timeout(dur, tokio::net::TcpStream::connect(middle_addr)).await??;
         let mut stream = tokio::io::BufStream::new(stream);
         let middle_auth = middle_server.credentials.clone();
-        socks5_impl::client::connect(&mut stream, server.addr, middle_auth)
+        let server_addr = required_proxy_address(&server, "remote proxy")?;
+        socks5_impl::client::connect(&mut stream, server_addr, middle_auth)
             .await
             .map_err(std_io_error_other)?;
         stream
     } else {
-        let server_addr: std::net::SocketAddr = server.addr.try_into()?;
+        let server_addr: std::net::SocketAddr = required_proxy_address(&server, "remote proxy")?.clone().try_into()?;
         let stream = tokio::time::timeout(dur, tokio::net::TcpStream::connect(server_addr)).await??;
         tokio::io::BufStream::new(stream)
     };
@@ -245,8 +259,9 @@ pub(crate) async fn create_s5_udp_client(
     dur: std::time::Duration,
     middle_server: Option<ProxyParameters>,
 ) -> std::io::Result<socks5_impl::client::SocksUdpClient> {
+    let server_addr = required_proxy_address(&server, "remote proxy")?;
+    let client_addr = if server_addr.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
     let stream = connect_proxy_stream(server.clone(), dur, middle_server).await?;
-    let client_addr = if server.addr.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
     let client = tokio::net::UdpSocket::bind(client_addr).await?;
     let auth = server.credentials.clone();
     socks5_impl::client::SocksDatagram::udp_associate(stream, client, auth)

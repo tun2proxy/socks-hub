@@ -25,6 +25,7 @@ Download the binary from [releases](https://github.com/ssrlive/socks-hub/release
 ### Install from source
 
 If you have [rust](https://rustup.rs/) toolchain installed, this should work:
+
 ```shell
 cargo install socks-hub
 ```
@@ -38,7 +39,7 @@ Usage: socks-hub.exe [OPTIONS] --listen-proxy-role <URL> --remote-server <URL>
 
 Options:
   -l, --listen-proxy-role <URL>  Source proxy role, URL in the form proto://[username[:password]@]host:port, where proto is one of socks5,
-                                 http. Username and password are encoded in percent encoding. For  
+                                 http. Username and password are encoded in percent encoding. For
                                  example: http://myname:pass%40word@127.0.0.1:1080
   -m, --middle-server <URL>      Optional middle SOCKS5 server, URL in form of socks5://[username[:password]@]host:port
   -r, --remote-server <URL>      Remote SOCKS5 server, URL in form of socks5://[username[:password]@]host:port
@@ -61,9 +62,11 @@ ACL files use a new explicit routing model:
 - Rules are evaluated within a section in file order, and the first match wins.
 
 > Before running any test, generate the ACL file first:
+>
 > ```shell
 > python3 genacl_proxy_gfw_bypass_china_ip.py --default-action block
 > ```
+>
 > This generator builds the shared ACL file used by both client-side and server-side target routing,
 > so the generated `proxy` and `direct` sections stay aligned with the current ACL behavior.
 > Use `--default-action proxy`, `direct`, or `block` to choose the fallback behavior.

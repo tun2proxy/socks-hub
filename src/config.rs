@@ -27,9 +27,9 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub acl_file: Option<std::path::PathBuf>,
 
-    /// Log verbosity level
+    /// Log verbosity level, ranging from off, error, warn, info, debug, to trace.
     #[arg(short, long, value_name = "level", default_value = "info")]
-    pub verbosity: ArgVerbosity,
+    pub verbosity: log::LevelFilter,
 }
 
 impl Default for Config {
@@ -40,7 +40,7 @@ impl Default for Config {
             middle_server: None,
             remote_server,
             acl_file: None,
-            verbosity: ArgVerbosity::Info,
+            verbosity: log::LevelFilter::Info,
         }
     }
 }
@@ -86,7 +86,7 @@ impl Config {
         self
     }
 
-    pub fn verbosity(&mut self, verbosity: ArgVerbosity) -> &mut Self {
+    pub fn verbosity(&mut self, verbosity: log::LevelFilter) -> &mut Self {
         self.verbosity = verbosity;
         self
     }
@@ -104,55 +104,5 @@ impl Config {
             .as_ref()
             .and_then(|proxy| proxy.credentials.clone())
             .unwrap_or_default()
-    }
-}
-
-#[repr(C)]
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum, Serialize, Deserialize)]
-pub enum ArgVerbosity {
-    Off = 0,
-    Error,
-    Warn,
-    #[default]
-    Info,
-    Debug,
-    Trace,
-}
-
-impl From<ArgVerbosity> for log::LevelFilter {
-    fn from(verbosity: ArgVerbosity) -> Self {
-        match verbosity {
-            ArgVerbosity::Off => log::LevelFilter::Off,
-            ArgVerbosity::Error => log::LevelFilter::Error,
-            ArgVerbosity::Warn => log::LevelFilter::Warn,
-            ArgVerbosity::Info => log::LevelFilter::Info,
-            ArgVerbosity::Debug => log::LevelFilter::Debug,
-            ArgVerbosity::Trace => log::LevelFilter::Trace,
-        }
-    }
-}
-
-impl From<log::Level> for ArgVerbosity {
-    fn from(level: log::Level) -> Self {
-        match level {
-            log::Level::Error => ArgVerbosity::Error,
-            log::Level::Warn => ArgVerbosity::Warn,
-            log::Level::Info => ArgVerbosity::Info,
-            log::Level::Debug => ArgVerbosity::Debug,
-            log::Level::Trace => ArgVerbosity::Trace,
-        }
-    }
-}
-
-impl std::fmt::Display for ArgVerbosity {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            ArgVerbosity::Off => write!(f, "off"),
-            ArgVerbosity::Error => write!(f, "error"),
-            ArgVerbosity::Warn => write!(f, "warn"),
-            ArgVerbosity::Info => write!(f, "info"),
-            ArgVerbosity::Debug => write!(f, "debug"),
-            ArgVerbosity::Trace => write!(f, "trace"),
-        }
     }
 }

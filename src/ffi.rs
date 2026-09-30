@@ -1,6 +1,6 @@
 #![cfg(not(target_os = "android"))]
 
-use crate::{ArgVerbosity, Config};
+use crate::{Config, dump_logger::LogLevel};
 use std::{
     net::SocketAddr,
     os::raw::{c_char, c_int, c_void},
@@ -29,7 +29,7 @@ unsafe impl Sync for CCallback {}
 /// - `middle_server`: Optional middle SOCKS5 server, which is a string in the format of
 ///   "socks5://[username[:password]@]host:port". Pass null to disable it.
 /// - `remote_server`: The remote SOCKS5 server address, which is a string in the format of "socks5://[username[:password]@]host:port".
-/// - `verbosity`: The verbosity level, which is an integer from 0 to 5,
+/// - `loglevel`: The verbosity level, which is an integer from 0 to 5,
 ///   where 0 means off, 1 means error, 2 means warn, 3 means info, 4 means debug, and 5 means trace.
 /// - `callback`: A function pointer, which is an optional callback function that will be called when the server is listening on the local address.
 /// - `ctx`: A pointer to the context, which is an optional pointer that will be passed to the callback function.
@@ -38,11 +38,12 @@ pub unsafe extern "C" fn socks_hub_run(
     listen_proxy_role: *const c_char,
     middle_server: *const c_char,
     remote_server: *const c_char,
-    verbosity: ArgVerbosity,
+    loglevel: LogLevel,
     callback: Option<unsafe extern "C" fn(c_int, *mut c_void)>,
     ctx: *mut c_void,
 ) -> c_int {
-    log::set_max_level(verbosity.into());
+    let verbosity: log::LevelFilter = loglevel.into();
+    log::set_max_level(verbosity);
     if let Err(err) = log::set_boxed_logger(Box::<crate::dump_logger::DumpLogger>::default()) {
         log::warn!("Failed to set logger: {err}");
     }

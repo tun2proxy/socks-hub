@@ -1,8 +1,44 @@
-use crate::ArgVerbosity;
 use std::{
     os::raw::{c_char, c_void},
     sync::Mutex,
 };
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LogLevel {
+    Off,
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl From<LogLevel> for log::LevelFilter {
+    fn from(level: LogLevel) -> Self {
+        match level {
+            LogLevel::Off => Self::Off,
+            LogLevel::Error => Self::Error,
+            LogLevel::Warn => Self::Warn,
+            LogLevel::Info => Self::Info,
+            LogLevel::Debug => Self::Debug,
+            LogLevel::Trace => Self::Trace,
+        }
+    }
+}
+
+impl From<log::LevelFilter> for LogLevel {
+    fn from(level: log::LevelFilter) -> Self {
+        match level {
+            log::LevelFilter::Off => Self::Off,
+            log::LevelFilter::Error => Self::Error,
+            log::LevelFilter::Warn => Self::Warn,
+            log::LevelFilter::Info => Self::Info,
+            log::LevelFilter::Debug => Self::Debug,
+            log::LevelFilter::Trace => Self::Trace,
+        }
+    }
+}
 
 pub(crate) static DUMP_CALLBACK: Mutex<Option<DumpCallback>> = Mutex::new(None);
 
@@ -16,19 +52,19 @@ pub(crate) static DUMP_CALLBACK: Mutex<Option<DumpCallback>> = Mutex::new(None);
 /// The ctx is the context pointer, which can be customized by the user to take ability to deal with the log message.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn socks_hub_set_log_callback(
-    callback: Option<unsafe extern "C" fn(ArgVerbosity, *const c_char, *mut c_void)>,
+    callback: Option<unsafe extern "C" fn(LogLevel, *const c_char, *mut c_void)>,
     ctx: *mut c_void,
 ) {
     *DUMP_CALLBACK.lock().unwrap() = Some(DumpCallback(callback, ctx));
 }
 
 #[derive(Clone)]
-pub struct DumpCallback(Option<unsafe extern "C" fn(ArgVerbosity, *const c_char, *mut c_void)>, *mut c_void);
+pub struct DumpCallback(Option<unsafe extern "C" fn(LogLevel, *const c_char, *mut c_void)>, *mut c_void);
 
 impl DumpCallback {
-    unsafe fn call(self, dump_level: ArgVerbosity, info: *const c_char) {
+    unsafe fn call(self, dump_level: log::LevelFilter, info: *const c_char) {
         if let Some(cb) = self.0 {
-            unsafe { cb(dump_level, info, self.1) };
+            unsafe { cb(dump_level.into(), info, self.1) };
         }
     }
 }
@@ -71,7 +107,7 @@ impl DumpLogger {
         let ptr = c_msg.as_ptr();
         if let Some(cb) = DUMP_CALLBACK.lock().unwrap().clone() {
             unsafe {
-                cb.call(record.level().into(), ptr);
+                cb.call(record.level().to_level_filter(), ptr);
             }
         }
     }

@@ -23,7 +23,9 @@ where
             })
     });
 
-    let listen_addr: SocketAddr = config.listen_proxy_role.addr.clone().try_into()?;
+    let listen_addr: SocketAddr = crate::required_proxy_address(&config.listen_proxy_role, "listen proxy")?
+        .clone()
+        .try_into()?;
 
     let listener = TcpListener::bind(listen_addr).await?;
 
