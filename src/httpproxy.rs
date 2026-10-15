@@ -7,7 +7,7 @@ use hyper::{
     service::service_fn,
     upgrade::Upgraded,
 };
-use socks5_impl::protocol::{Address, UserKey};
+use socks5_impl::{Address, UserKey};
 use std::{future::Future, pin::Pin, sync::Arc};
 
 const HTTP_DEFAULT_PORT: u16 = 80;

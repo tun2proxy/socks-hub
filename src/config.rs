@@ -1,5 +1,5 @@
 use serde_derive::{Deserialize, Serialize};
-use socks5_impl::protocol::{ProxyParameters, UserKey};
+use socks5_impl::{ProxyParameters, UserKey};
 
 /// Proxy tunnel from HTTP or SOCKS5 to SOCKS5
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize)]

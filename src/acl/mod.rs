@@ -11,7 +11,7 @@
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use iprange::IpRange;
 use regex::bytes::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
-pub use socks5_impl::protocol::Address;
+pub use socks5_impl::Address;
 use std::{
     borrow::Cow,
     collections::HashSet,

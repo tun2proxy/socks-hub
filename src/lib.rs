@@ -23,9 +23,12 @@ pub use log::LevelFilter;
 #[cfg(feature = "httpproxy")]
 mod tokiort;
 #[cfg(feature = "httpproxy")]
-pub use socks5_impl::protocol::{Address, Command, ProxyParameters, ProxyType, UserKey};
+pub use socks5_impl::{Address, ProxyParameters, ProxyType, UserKey, protocol::Command};
 #[cfg(feature = "sockshub")]
-use socks5_impl::protocol::{AsyncStreamOperation, Reply, Response as SocksResponse, UdpHeader};
+use socks5_impl::{
+    AsyncStreamOperation,
+    protocol::{Reply, Response as SocksResponse, UdpHeader},
+};
 #[cfg(feature = "sockshub")]
 use tokio::{io::AsyncWriteExt, net::UdpSocket};
 #[cfg(feature = "httpproxy")]
@@ -218,7 +221,7 @@ pub(crate) const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::fro
 pub(crate) async fn create_s5_connect(
     server: ProxyParameters,
     dur: std::time::Duration,
-    dst: &socks5_impl::protocol::Address,
+    dst: &Address,
     middle_server: Option<ProxyParameters>,
 ) -> std::io::Result<tokio::io::BufStream<tokio::net::TcpStream>> {
     let auth = server.credentials.clone();

@@ -1,8 +1,8 @@
 use crate::std_io_error_other;
 use crate::{BoxError, CONNECT_TIMEOUT, Config, Result};
-use socks5_impl::protocol::{Address, AsyncStreamOperation, ProxyParameters, Reply, Response as SocksResponse};
 use socks5_impl::{
-    protocol::UdpHeader,
+    Address, AsyncStreamOperation, ProxyParameters,
+    protocol::{Reply, Response as SocksResponse, UdpHeader},
     server::{
         AssociatedUdpSocket, ClientConnection, Connect, IncomingConnection, Server, UdpAssociate, auth,
         connection::{associate, connect},
