@@ -99,7 +99,7 @@ pub(crate) async fn handle(conn: IncomingConnection, server: ProxyParameters, mi
             handle_s5_upd_associate(associate, server, middle_server).await?;
         }
         ClientConnection::Bind(bind, _) => {
-            let mut conn = bind.reply(Reply::CommandNotSupported, Address::unspecified()).await?;
+            let mut conn = bind.reply(Reply::CommandNotSupported, Address::unspecified_v4()).await?;
             conn.shutdown().await?;
         }
         ClientConnection::Connect(connect, dst) => {
@@ -124,7 +124,7 @@ async fn handle_s5_client_connection(
                 TargetDecision::Proxy => must_proxied = true,
                 TargetDecision::Bypass => must_proxied = false,
                 TargetDecision::Block => {
-                    let mut conn = connect.reply(Reply::ConnectionNotAllowed, Address::unspecified()).await?;
+                    let mut conn = connect.reply(Reply::ConnectionNotAllowed, Address::unspecified_v4()).await?;
                     conn.shutdown().await?;
                     return Ok(());
                 }
@@ -135,7 +135,7 @@ async fn handle_s5_client_connection(
             use std::net::ToSocketAddrs;
             let addr = dst.to_socket_addrs()?.next().ok_or(crate::std_io_error_other("no address found"))?;
             let mut server = tokio::net::TcpStream::connect(addr).await?;
-            let mut conn = connect.reply(Reply::Succeeded, Address::unspecified()).await?;
+            let mut conn = connect.reply(Reply::Succeeded, Address::unspecified_v4()).await?;
             log::trace!("{} -> {}", conn.peer_addr()?, dst);
             tokio::io::copy_bidirectional(&mut server, &mut conn).await?;
             return Ok(());
@@ -143,7 +143,7 @@ async fn handle_s5_client_connection(
     }
 
     let mut stream = crate::create_s5_connect(server, CONNECT_TIMEOUT, &dst, middle_server).await?;
-    let mut conn = connect.reply(Reply::Succeeded, Address::unspecified()).await?;
+    let mut conn = connect.reply(Reply::Succeeded, Address::unspecified_v4()).await?;
     log::trace!("{} -> {}", conn.peer_addr()?, dst);
 
     tokio::io::copy_bidirectional(&mut stream, &mut conn).await?;
@@ -162,7 +162,7 @@ pub(crate) async fn handle_s5_upd_associate(
 
     let result = udp_listener.and_then(|socket| socket.local_addr().map(|addr| (socket, addr)));
     if let Err(err) = result {
-        let mut conn = associate.reply(Reply::GeneralFailure, Address::unspecified()).await?;
+        let mut conn = associate.reply(Reply::GeneralFailure, Address::unspecified_v4()).await?;
         conn.shutdown().await?;
         return Err(err.into());
     }
@@ -247,13 +247,13 @@ pub async fn handle_socks5_connect(mut stream: TcpStream, dst: Address, remote_s
                     use std::net::ToSocketAddrs;
                     let addr = dst.to_socket_addrs()?.next().ok_or(std_io_error_other("no address found"))?;
                     let mut server = tokio::net::TcpStream::connect(addr).await?;
-                    let resp = SocksResponse::new(Reply::Succeeded, Address::unspecified());
+                    let resp = SocksResponse::new(Reply::Succeeded, Address::unspecified_v4());
                     resp.write_to_async_stream(&mut stream).await.map_err(std_io_error_other)?;
                     tokio::io::copy_bidirectional(&mut stream, &mut server).await?;
                     return Ok(());
                 }
                 TargetDecision::Block => {
-                    let resp = SocksResponse::new(Reply::ConnectionNotAllowed, Address::unspecified());
+                    let resp = SocksResponse::new(Reply::ConnectionNotAllowed, Address::unspecified_v4());
                     resp.write_to_async_stream(&mut stream).await.map_err(std_io_error_other)?;
                     use tokio::io::AsyncWriteExt;
                     stream.shutdown().await.map_err(std_io_error_other)?;
@@ -263,7 +263,7 @@ pub async fn handle_socks5_connect(mut stream: TcpStream, dst: Address, remote_s
         }
     }
 
-    let resp = SocksResponse::new(Reply::Succeeded, Address::unspecified());
+    let resp = SocksResponse::new(Reply::Succeeded, Address::unspecified_v4());
     resp.write_to_async_stream(&mut stream).await.map_err(std_io_error_other)?;
     let mut server = crate::create_s5_connect(remote_server, CONNECT_TIMEOUT, &dst, None).await?;
     tokio::io::copy_bidirectional(&mut stream, &mut server).await?;

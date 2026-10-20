@@ -149,7 +149,7 @@ async fn service_connection(mut stream: tokio::net::TcpStream, config: std::sync
             match req.command {
                 Command::Connect => crate::socks2socks::handle_socks5_connect(stream, req.address, config.remote_server.clone()).await,
                 Command::Bind => {
-                    let resp = SocksResponse::new(Reply::CommandNotSupported, Address::unspecified());
+                    let resp = SocksResponse::new(Reply::CommandNotSupported, Address::unspecified_v4());
                     resp.write_to_async_stream(&mut stream).await.map_err(std_io_error_other)?;
                     stream.shutdown().await.map_err(std_io_error_other)?;
                     Ok(())

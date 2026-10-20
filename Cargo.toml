@@ -1,6 +1,6 @@
 [package]
 name = "socks-hub"
-version = "0.2.12"
+version = "0.2.13"
 license = "MIT"
 repository = "https://github.com/ssrlive/socks-hub"
 homepage = "https://github.com/ssrlive/socks-hub"
@@ -78,11 +78,11 @@ regex = { version = "1.13.1", optional = true }
 serde = { version = "1.0.229", optional = true }
 serde_derive = { version = "1.0.229", optional = true }
 serde_json = { version = "1.0.154", optional = true }
-socks5-impl = { version = "0.10.0", default-features = false, features = [
+socks5-impl = { version = "0.10.3", default-features = false, features = [
     "client",
     "server",
     "serde",
 ], optional = true }
-tokio = { version = "1.53.3", features = ["full"], optional = true }
+tokio = { version = "1.54.0", features = ["full"], optional = true }
 tokio-util = { version = "0.7.20", optional = true }
 url = { version = "2.5.8", optional = true }
